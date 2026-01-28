@@ -1,8 +1,21 @@
 import { useState, useEffect, useCallback, useReducer } from 'react';
-import { Brain, ChevronLeft, ExternalLink, History, Home, RotateCcw, Sparkles, Trash2 } from 'lucide-react';
+import { Brain, ChevronLeft, ExternalLink, History, Home, RotateCcw, Trash2 } from 'lucide-react';
+
+// Import types
+import type { 
+  Paper, 
+  PaperStats, 
+  Flashcard, 
+  Session, 
+  AppState, 
+  AppAction,
+  SortOption,
+  CachedFlashcards,
+  CachedAbstract
+} from '@shared/types';
 
 // Import constants
-import { INITIAL_PAPERS, RATING_MAP } from './constants';
+import { INITIAL_PAPERS } from './constants';
 
 // Import utilities
 import { calculatePriority } from './utils/priority';
@@ -30,23 +43,23 @@ import {
 } from './components';
 
 // ==================== STATE REDUCER ====================
-const initialState = {
+const initialState: AppState = {
   screen: 'home',
   papers: INITIAL_PAPERS,
   paperStats: {},
   currentPaper: null,
   flashcards: [],
   currentCardIndex: 0,
-  answers: [], // { selectedIndex?, userText?, isCorrect, score, feedback? }
+  answers: [],
   sessionHistory: [],
   isLoading: false,
   loadingMessage: '',
   error: null,
-  isAnswered: false, // MCQ/open-ended answered state
-  isEvaluating: false // AI evaluation in progress
+  isAnswered: false,
+  isEvaluating: false
 };
 
-function reducer(state, action) {
+function reducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
     case 'SET_LOADING':
       return { ...state, isLoading: action.payload.loading, loadingMessage: action.payload.message || '', error: null };
@@ -66,10 +79,11 @@ function reducer(state, action) {
       return { ...state, flashcards: action.payload, currentCardIndex: 0, answers: [], screen: 'review', isLoading: false, isAnswered: false, isEvaluating: false };
     case 'MARK_ANSWERED':
       return { ...state, isAnswered: true, isEvaluating: false };
-    case 'SAVE_ANSWER':
+    case 'SAVE_ANSWER': {
       const newAnswers = [...state.answers];
       newAnswers[state.currentCardIndex] = action.payload;
       return { ...state, answers: newAnswers };
+    }
     case 'NEXT_CARD':
       if (state.currentCardIndex >= state.flashcards.length - 1) {
         return { ...state, screen: 'summary', isEvaluating: false };
@@ -99,30 +113,30 @@ function reducer(state, action) {
 // ==================== MAIN APP ====================
 export default function FlashcardApp() {
   const [state, dispatch] = useReducer(reducer, initialState);
-  const [selectedPaper, setSelectedPaper] = useState(null);
-  const [selectedAnswer, setSelectedAnswer] = useState(null);
-  const [userText, setUserText] = useState(''); // For open-ended answers
+  const [selectedPaper, setSelectedPaper] = useState<Paper | null>(null);
+  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
+  const [userText, setUserText] = useState('');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [cachedPapers, setCachedPapers] = useState(new Set());
+  const [cachedPapers, setCachedPapers] = useState<Set<string>>(new Set());
   
   // Filter/Search/Sort state
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTags, setSelectedTags] = useState([]);
-  const [sortBy, setSortBy] = useState('priority');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [sortBy, setSortBy] = useState<SortOption>('priority');
   const [showDueOnly, setShowDueOnly] = useState(false);
 
   // Load data on mount
   useEffect(() => {
     async function loadData() {
       // Load paper stats from local storage
-      const stats = await storage.get('paper-stats') || {};
+      const stats = await storage.get<Record<string, PaperStats>>('paper-stats') || {};
       dispatch({ type: 'SET_PAPER_STATS', payload: stats });
 
       // Load session history from local storage
       const sessionKeys = await storage.list('sessions:');
-      const sessions = [];
+      const sessions: Session[] = [];
       for (const key of sessionKeys.slice(-20)) {
-        const session = await storage.get(key);
+        const session = await storage.get<Session>(key);
         if (session) sessions.push(session);
       }
       dispatch({ type: 'SET_SESSION_HISTORY', payload: sessions });
@@ -146,7 +160,8 @@ export default function FlashcardApp() {
           console.log('Backend not available, using fallback papers');
         }
       } catch (error) {
-        console.warn('Failed to fetch papers from Notion, using fallback:', error.message);
+        const err = error as Error;
+        console.warn('Failed to fetch papers from Notion, using fallback:', err.message);
         dispatch({ type: 'SET_LOADING', payload: { loading: false, message: '' } });
       }
     }
@@ -160,13 +175,13 @@ export default function FlashcardApp() {
     setUserText(existingAnswer?.userText ?? '');
   }, [state.currentCardIndex, state.answers]);
 
-  const startReview = useCallback(async (paper, forceRegenerate = false) => {
+  const startReview = useCallback(async (paper: Paper, forceRegenerate = false) => {
     dispatch({ type: 'SELECT_PAPER', payload: paper });
 
     // Check for cached flashcards
     const cacheKey = `flashcards:${paper.id}`;
     const abstractCacheKey = `abstract:${paper.id}`;
-    const cached = !forceRegenerate ? await storage.get(cacheKey) : null;
+    const cached = !forceRegenerate ? await storage.get<CachedFlashcards>(cacheKey) : null;
 
     if (cached && cached.flashcards?.length > 0) {
       dispatch({ type: 'SET_FLASHCARDS', payload: cached.flashcards });
@@ -177,12 +192,12 @@ export default function FlashcardApp() {
     dispatch({ type: 'SET_LOADING', payload: { loading: true, message: 'Generating quiz questions...' } });
     try {
       // Fetch abstract if paper has an arXiv URL
-      let abstract = null;
+      let abstract: string | null = null;
       if (isArxivUrl(paper.url)) {
         dispatch({ type: 'SET_LOADING', payload: { loading: true, message: 'Fetching paper abstract...' } });
 
         // Check cache first
-        const cachedAbstract = await storage.get(abstractCacheKey);
+        const cachedAbstract = await storage.get<CachedAbstract>(abstractCacheKey);
         if (cachedAbstract?.abstract) {
           abstract = cachedAbstract.abstract;
           console.log('Using cached abstract for:', paper.title);
@@ -192,7 +207,7 @@ export default function FlashcardApp() {
           if (abstractData?.abstract) {
             abstract = abstractData.abstract;
             // Cache the abstract
-            await storage.set(abstractCacheKey, {
+            await storage.set<CachedAbstract>(abstractCacheKey, {
               abstract: abstractData.abstract,
               arxivId: abstractData.arxivId,
               arxivTitle: abstractData.arxivTitle,
@@ -210,7 +225,7 @@ export default function FlashcardApp() {
       dispatch({ type: 'SET_FLASHCARDS', payload: cards });
 
       // Cache the flashcards (including abstract indicator)
-      await storage.set(cacheKey, {
+      await storage.set<CachedFlashcards>(cacheKey, {
         flashcards: cards,
         generatedAt: new Date().toISOString(),
         paperTitle: paper.title,
@@ -222,7 +237,8 @@ export default function FlashcardApp() {
 
       setSelectedAnswer(null);
     } catch (error) {
-      dispatch({ type: 'SET_ERROR', payload: error.message });
+      const err = error as Error;
+      dispatch({ type: 'SET_ERROR', payload: err.message });
       dispatch({ type: 'SET_SCREEN', payload: 'home' });
     }
   }, [state.papers]);
@@ -251,7 +267,7 @@ export default function FlashcardApp() {
             score: evaluation.score,
             feedback: {
               ...evaluation.feedback,
-              score: evaluation.score  // Include score in feedback for display
+              score: evaluation.score
             }
           }});
           dispatch({ type: 'MARK_ANSWERED' });
@@ -267,9 +283,10 @@ export default function FlashcardApp() {
         }
       } else {
         // MCQ logic
-        const isCorrect = selectedAnswer === card.correctIndex;
+        const mcqCard = card as Extract<Flashcard, { questionType: 'mcq' }>;
+        const isCorrect = selectedAnswer === mcqCard.correctIndex;
         dispatch({ type: 'SAVE_ANSWER', payload: {
-          selectedIndex: selectedAnswer,
+          selectedIndex: selectedAnswer ?? undefined,
           isCorrect,
           score: isCorrect ? 100 : 0
         }});
@@ -290,7 +307,7 @@ export default function FlashcardApp() {
     const totalScore = state.answers.reduce((sum, a) => sum + (a?.score || 0), 0);
     const overallScore = Math.round(totalScore / state.answers.length);
     
-    const session = {
+    const session: Session = {
       id: sessionId,
       paperId: state.currentPaper?.id,
       paperTitle: state.currentPaper?.title,
@@ -299,10 +316,12 @@ export default function FlashcardApp() {
       flashcards: state.flashcards.map((card, i) => ({
         question: card.question,
         questionType: card.questionType || 'mcq',
-        correctAnswer: card.questionType === 'open-ended' ? card.explanation : card.options?.[card.correctIndex],
+        correctAnswer: card.questionType === 'open-ended' 
+          ? card.explanation 
+          : (card as Extract<Flashcard, { questionType: 'mcq' }>).options?.[(card as Extract<Flashcard, { questionType: 'mcq' }>).correctIndex] || '',
         userAnswer: card.questionType === 'open-ended'
           ? state.answers[i]?.userText
-          : card.options?.[state.answers[i]?.selectedIndex],
+          : (card as Extract<Flashcard, { questionType: 'mcq' }>).options?.[state.answers[i]?.selectedIndex ?? -1],
         isCorrect: state.answers[i]?.isCorrect || false,
         score: state.answers[i]?.score || 0,
         feedback: state.answers[i]?.feedback,
@@ -351,7 +370,8 @@ export default function FlashcardApp() {
         });
         console.log('Synced stats to Notion for paper:', paperId);
       } catch (error) {
-        console.warn('Failed to sync stats to Notion:', error.message);
+        const err = error as Error;
+        console.warn('Failed to sync stats to Notion:', err.message);
       }
     }
 
@@ -364,6 +384,7 @@ export default function FlashcardApp() {
     if (state.screen === 'summary' && state.answers.length > 0) {
       saveSession();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.screen]);
 
   // Extract unique tags for filters
@@ -408,21 +429,23 @@ export default function FlashcardApp() {
     switch (sortBy) {
       case 'priority':
         return calculatePriority(b, statsB) - calculatePriority(a, statsA);
-      case 'new-first':
+      case 'new-first': {
         // Papers never reviewed come first, then by title
         const aIsNew = !statsA?.lastReviewed;
         const bIsNew = !statsB?.lastReviewed;
         if (aIsNew && !bIsNew) return -1;
         if (!aIsNew && bIsNew) return 1;
         return (a.title || '').localeCompare(b.title || '');
+      }
       case 'mastery-asc':
         return (statsA?.masteryScore || 0) - (statsB?.masteryScore || 0);
       case 'mastery-desc':
         return (statsB?.masteryScore || 0) - (statsA?.masteryScore || 0);
-      case 'recent':
-        const dateA = statsA?.lastReviewed ? new Date(statsA.lastReviewed) : new Date(0);
-        const dateB = statsB?.lastReviewed ? new Date(statsB.lastReviewed) : new Date(0);
+      case 'recent': {
+        const dateA = statsA?.lastReviewed ? new Date(statsA.lastReviewed).getTime() : 0;
+        const dateB = statsB?.lastReviewed ? new Date(statsB.lastReviewed).getTime() : 0;
         return dateB - dateA;
+      }
       case 'alphabetical':
         return (a.title || '').localeCompare(b.title || '');
       default:
@@ -446,6 +469,9 @@ export default function FlashcardApp() {
     setCachedPapers(new Set());
     setShowResetConfirm(false);
   };
+
+  // Get current card for rendering
+  const currentCard = state.flashcards[state.currentCardIndex];
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -590,8 +616,8 @@ export default function FlashcardApp() {
             <div className="mb-4">
               <h2 className="text-lg font-medium text-slate-800">{state.currentPaper?.title}</h2>
               <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
-                {state.currentPaper?.tags?.length > 0 && (
-                  <span>{state.currentPaper?.tags?.slice(0, 3).join(', ')}</span>
+                {state.currentPaper?.tags && state.currentPaper.tags.length > 0 && (
+                  <span>{state.currentPaper.tags.slice(0, 3).join(', ')}</span>
                 )}
                 {state.currentPaper?.url && (
                   <>
@@ -616,9 +642,9 @@ export default function FlashcardApp() {
               <LoadingSpinner message={state.loadingMessage} />
             ) : (
               // Render appropriate component based on question type
-              state.flashcards[state.currentCardIndex]?.questionType === 'open-ended' ? (
+              currentCard?.questionType === 'open-ended' ? (
                 <OpenEndedView
-                  card={state.flashcards[state.currentCardIndex]}
+                  card={currentCard}
                   userText={userText}
                   setUserText={setUserText}
                   isAnswered={state.isAnswered}
@@ -626,9 +652,9 @@ export default function FlashcardApp() {
                   feedback={state.answers[state.currentCardIndex]?.feedback}
                   onSubmit={handleSubmitAnswer}
                 />
-              ) : (
+              ) : currentCard && (
                 <FlashcardView
-                  card={state.flashcards[state.currentCardIndex]}
+                  card={currentCard as Extract<Flashcard, { questionType: 'mcq' }>}
                   selectedAnswer={selectedAnswer}
                   setSelectedAnswer={setSelectedAnswer}
                   isAnswered={state.isAnswered}
@@ -648,7 +674,7 @@ export default function FlashcardApp() {
               </button>
               <div className="flex items-center gap-4">
                 <button
-                  onClick={() => startReview(state.currentPaper, true)}
+                  onClick={() => state.currentPaper && startReview(state.currentPaper, true)}
                   className="flex items-center gap-1 text-slate-500 hover:text-indigo-600"
                   title="Generate new questions"
                 >
@@ -672,7 +698,7 @@ export default function FlashcardApp() {
             paper={state.currentPaper}
             answers={state.answers}
             flashcards={state.flashcards}
-            onReviewAgain={() => startReview(state.currentPaper)}
+            onReviewAgain={() => state.currentPaper && startReview(state.currentPaper)}
             onNewPaper={() => dispatch({ type: 'RESET_SESSION' })}
             onEnd={() => dispatch({ type: 'RESET_SESSION' })}
           />

@@ -1,4 +1,14 @@
 import { X, ExternalLink, FileText, Clock, Target, TrendingUp, BookOpen, Tag } from 'lucide-react';
+import type { Paper, PaperStats, Session } from '@shared/types';
+
+interface PaperDetailProps {
+  paper: Paper | null;
+  stats?: PaperStats;
+  sessions: Session[];
+  relatedPapers: Paper[];
+  onClose: () => void;
+  onStartQuiz: () => void;
+}
 
 export default function PaperDetail({ 
   paper, 
@@ -7,7 +17,7 @@ export default function PaperDetail({
   relatedPapers,
   onClose, 
   onStartQuiz 
-}) {
+}: PaperDetailProps) {
   if (!paper) return null;
 
   const masteryScore = stats?.masteryScore || 0;
@@ -69,7 +79,7 @@ export default function PaperDetail({
           </div>
 
           {/* Tags */}
-          {paper.tags?.length > 0 && (
+          {paper.tags && paper.tags.length > 0 && (
             <div>
               <h3 className="text-sm font-medium text-slate-700 mb-2 flex items-center gap-1">
                 <Tag className="w-4 h-4" />

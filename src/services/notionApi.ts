@@ -1,22 +1,31 @@
 // ==================== NOTION API SERVICE ====================
 // This service communicates with the backend proxy for Notion API calls
 
+import type {
+  Paper,
+  PapersResponse,
+  UpdatePaperRequest,
+  UpdatePaperResponse,
+  AbstractResponse,
+  ErrorResponse,
+} from '@shared/types';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 /**
  * Fetch all papers from Notion via backend
- * @returns {Promise<{papers: Array, count: number, hasMore: boolean}>}
+ * @returns Papers list with count and pagination info
  */
-export async function fetchPapers() {
+export async function fetchPapers(): Promise<PapersResponse> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/papers`);
     
     if (!response.ok) {
-      const error = await response.json();
+      const error = await response.json() as ErrorResponse;
       throw new Error(error.message || `Failed to fetch papers: ${response.status}`);
     }
     
-    return await response.json();
+    return await response.json() as PapersResponse;
   } catch (error) {
     console.error('Failed to fetch papers from Notion:', error);
     throw error;
@@ -25,19 +34,19 @@ export async function fetchPapers() {
 
 /**
  * Fetch a single paper by ID
- * @param {string} paperId - The Notion page ID
- * @returns {Promise<Object>} Paper object
+ * @param paperId - The Notion page ID
+ * @returns Paper object
  */
-export async function fetchPaper(paperId) {
+export async function fetchPaper(paperId: string): Promise<Paper> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/papers/${paperId}`);
     
     if (!response.ok) {
-      const error = await response.json();
+      const error = await response.json() as ErrorResponse;
       throw new Error(error.message || `Failed to fetch paper: ${response.status}`);
     }
     
-    return await response.json();
+    return await response.json() as Paper;
   } catch (error) {
     console.error(`Failed to fetch paper ${paperId}:`, error);
     throw error;
@@ -46,14 +55,14 @@ export async function fetchPaper(paperId) {
 
 /**
  * Update paper review stats in Notion
- * @param {string} paperId - The Notion page ID
- * @param {Object} stats - Stats to update
- * @param {string} [stats.lastReviewed] - ISO date string of last review
- * @param {number} [stats.masteryScore] - Mastery score (0-100)
- * @param {number} [stats.reviewCount] - Total review count
- * @returns {Promise<{success: boolean, updatedAt: string}>}
+ * @param paperId - The Notion page ID
+ * @param stats - Stats to update
+ * @returns Success status and update timestamp
  */
-export async function updatePaperStats(paperId, stats) {
+export async function updatePaperStats(
+  paperId: string,
+  stats: UpdatePaperRequest
+): Promise<UpdatePaperResponse> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/papers/${paperId}`, {
       method: 'PATCH',
@@ -64,11 +73,11 @@ export async function updatePaperStats(paperId, stats) {
     });
     
     if (!response.ok) {
-      const error = await response.json();
+      const error = await response.json() as ErrorResponse;
       throw new Error(error.message || `Failed to update paper: ${response.status}`);
     }
     
-    return await response.json();
+    return await response.json() as UpdatePaperResponse;
   } catch (error) {
     console.error(`Failed to update paper ${paperId}:`, error);
     throw error;
@@ -77,9 +86,9 @@ export async function updatePaperStats(paperId, stats) {
 
 /**
  * Check if the backend server is healthy
- * @returns {Promise<boolean>}
+ * @returns true if backend is available
  */
-export async function checkHealth() {
+export async function checkHealth(): Promise<boolean> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/health`);
     return response.ok;
@@ -90,10 +99,10 @@ export async function checkHealth() {
 
 /**
  * Fetch abstract for a paper from arXiv via backend
- * @param {string} paperId - The Notion page ID
- * @returns {Promise<{abstract: string, arxivId: string, arxivTitle: string, arxivAuthors: string[], arxivPublished: string}|null>}
+ * @param paperId - The Notion page ID
+ * @returns Abstract data or null if not available
  */
-export async function fetchAbstract(paperId) {
+export async function fetchAbstract(paperId: string): Promise<AbstractResponse | null> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/papers/${paperId}/abstract`);
 
@@ -102,23 +111,24 @@ export async function fetchAbstract(paperId) {
       if (response.status === 400 || response.status === 404) {
         return null;
       }
-      const error = await response.json();
+      const error = await response.json() as ErrorResponse;
       throw new Error(error.message || `Failed to fetch abstract: ${response.status}`);
     }
 
-    return await response.json();
+    return await response.json() as AbstractResponse;
   } catch (error) {
-    console.warn(`Could not fetch abstract for paper ${paperId}:`, error.message);
+    const err = error as Error;
+    console.warn(`Could not fetch abstract for paper ${paperId}:`, err.message);
     return null;
   }
 }
 
 /**
  * Fetch abstract directly from a URL (for papers without Notion ID)
- * @param {string} url - The paper URL (arXiv)
- * @returns {Promise<{abstract: string, arxivId: string, title: string, authors: string[], published: string}|null>}
+ * @param url - The paper URL (arXiv)
+ * @returns Abstract data or null if not available
  */
-export async function fetchAbstractFromUrl(url) {
+export async function fetchAbstractFromUrl(url: string): Promise<AbstractResponse | null> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/abstract`, {
       method: 'POST',
@@ -133,23 +143,24 @@ export async function fetchAbstractFromUrl(url) {
       if (response.status === 400) {
         return null;
       }
-      const error = await response.json();
+      const error = await response.json() as ErrorResponse;
       throw new Error(error.message || `Failed to fetch abstract: ${response.status}`);
     }
 
-    return await response.json();
+    return await response.json() as AbstractResponse;
   } catch (error) {
-    console.warn(`Could not fetch abstract from URL ${url}:`, error.message);
+    const err = error as Error;
+    console.warn(`Could not fetch abstract from URL ${url}:`, err.message);
     return null;
   }
 }
 
 /**
  * Check if a URL is an arXiv URL (client-side check)
- * @param {string} url - URL to check
- * @returns {boolean}
+ * @param url - URL to check
+ * @returns true if URL is from arXiv
  */
-export function isArxivUrl(url) {
+export function isArxivUrl(url: string | undefined | null): boolean {
   if (!url) return false;
   return /arxiv\.org\/(?:abs|pdf)\//.test(url);
 }

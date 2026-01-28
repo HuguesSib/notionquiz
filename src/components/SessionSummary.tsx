@@ -1,8 +1,38 @@
 import { useState } from 'react';
 import { Check, X, ChevronDown, ChevronUp } from 'lucide-react';
+import type { Paper, Answer, Flashcard, QuestionConcept } from '@shared/types';
 
-export default function SessionSummary({ paper, answers, flashcards, onReviewAgain, onNewPaper, onEnd }) {
-  const [expandedCards, setExpandedCards] = useState(new Set());
+interface SessionSummaryProps {
+  paper: Paper | null;
+  answers: Answer[];
+  flashcards: Flashcard[];
+  onReviewAgain: () => void;
+  onNewPaper: () => void;
+  onEnd: () => void;
+}
+
+interface ConceptScore {
+  totalScore: number;
+  count: number;
+}
+
+const conceptLabels: Record<QuestionConcept | 'general', string> = {
+  main_contribution: 'Key Contributions',
+  technical: 'Technical Insights',
+  comparison: 'Comparisons',
+  practical: 'Practical Implications',
+  general: 'General'
+};
+
+export default function SessionSummary({ 
+  paper, 
+  answers, 
+  flashcards, 
+  onReviewAgain, 
+  onNewPaper, 
+  onEnd 
+}: SessionSummaryProps) {
+  const [expandedCards, setExpandedCards] = useState<Set<number>>(new Set());
 
   // Calculate average score (0-100 scale)
   const totalScore = answers.reduce((sum, a) => sum + (a?.score || 0), 0);
@@ -11,7 +41,7 @@ export default function SessionSummary({ paper, answers, flashcards, onReviewAga
   const totalCount = answers.length;
 
   // Toggle card expansion
-  const toggleCard = (index) => {
+  const toggleCard = (index: number) => {
     const newExpanded = new Set(expandedCards);
     if (newExpanded.has(index)) {
       newExpanded.delete(index);
@@ -22,7 +52,7 @@ export default function SessionSummary({ paper, answers, flashcards, onReviewAga
   };
   
   // Group by concept with actual scores
-  const conceptScores = {};
+  const conceptScores: Record<string, ConceptScore> = {};
   flashcards.forEach((card, i) => {
     const concept = card.concept || 'general';
     if (!conceptScores[concept]) {
@@ -31,14 +61,6 @@ export default function SessionSummary({ paper, answers, flashcards, onReviewAga
     conceptScores[concept].totalScore += (answers[i]?.score || 0);
     conceptScores[concept].count += 1;
   });
-
-  const conceptLabels = {
-    main_contribution: 'Key Contributions',
-    technical: 'Technical Insights',
-    comparison: 'Comparisons',
-    practical: 'Practical Implications',
-    general: 'General'
-  };
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -78,7 +100,7 @@ export default function SessionSummary({ paper, answers, flashcards, onReviewAga
               return (
                 <div key={concept}>
                   <div className="flex justify-between text-sm mb-1">
-                    <span className="text-slate-600">{conceptLabels[concept] || concept}</span>
+                    <span className="text-slate-600">{conceptLabels[concept as QuestionConcept | 'general'] || concept}</span>
                     <span className={avgPct >= 70 ? 'text-green-600' : avgPct >= 50 ? 'text-amber-600' : 'text-red-600'}>
                       {avgPct}% ({data.count} {data.count === 1 ? 'question' : 'questions'})
                     </span>
@@ -106,6 +128,7 @@ export default function SessionSummary({ paper, answers, flashcards, onReviewAga
               const isExpanded = expandedCards.has(i);
               const score = answer?.score || 0;
               const scoreColor = score >= 80 ? 'text-green-600 bg-green-50' : score >= 60 ? 'text-amber-600 bg-amber-50' : 'text-red-600 bg-red-50';
+              const isMCQ = card.questionType !== 'open-ended';
 
               return (
                 <div key={i} className="border border-slate-200 rounded-lg overflow-hidden">
@@ -131,7 +154,7 @@ export default function SessionSummary({ paper, answers, flashcards, onReviewAga
                   {isExpanded && (
                     <div className="px-3 pb-3 border-t border-slate-100">
                       {/* MCQ Details */}
-                      {card.questionType !== 'open-ended' && (
+                      {isMCQ && card.questionType === 'mcq' && (
                         <div className="mt-2 space-y-1">
                           <div className="flex items-start gap-2 text-sm">
                             <Check className="w-4 h-4 mt-0.5 text-green-600 flex-shrink-0" />
@@ -160,7 +183,7 @@ export default function SessionSummary({ paper, answers, flashcards, onReviewAga
                           {/* AI Feedback */}
                           {answer?.feedback && (
                             <div className="space-y-2">
-                              {answer.feedback.correct?.length > 0 && (
+                              {answer.feedback.correct && answer.feedback.correct.length > 0 && (
                                 <div>
                                   <p className="text-xs font-medium text-green-700 mb-1">What you got right:</p>
                                   <ul className="text-sm text-green-600 space-y-0.5">
@@ -173,7 +196,7 @@ export default function SessionSummary({ paper, answers, flashcards, onReviewAga
                                   </ul>
                                 </div>
                               )}
-                              {answer.feedback.missing?.length > 0 && (
+                              {answer.feedback.missing && answer.feedback.missing.length > 0 && (
                                 <div>
                                   <p className="text-xs font-medium text-amber-700 mb-1">What to review:</p>
                                   <ul className="text-sm text-amber-600 space-y-0.5">
@@ -201,7 +224,7 @@ export default function SessionSummary({ paper, answers, flashcards, onReviewAga
                       )}
 
                       {/* MCQ Explanation */}
-                      {card.questionType !== 'open-ended' && card.explanation && (
+                      {isMCQ && card.explanation && (
                         <div className="mt-2 text-sm text-slate-600 bg-slate-50 p-2 rounded">
                           {card.explanation}
                         </div>
@@ -218,7 +241,7 @@ export default function SessionSummary({ paper, answers, flashcards, onReviewAga
         {avgScore >= 90 && (
           <div className="p-6 border-b border-slate-200 bg-green-50">
             <p className="text-green-800 font-medium text-center">
-              Excellent work! You've demonstrated strong understanding of this paper.
+              Excellent work! You&apos;ve demonstrated strong understanding of this paper.
             </p>
           </div>
         )}

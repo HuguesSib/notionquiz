@@ -1,12 +1,38 @@
-import express from 'express';
+import express, { Request, Response, Router } from 'express';
 import { Client } from '@notionhq/client';
+import type {
+  PageObjectResponse,
+  BlockObjectResponse,
+  RichTextItemResponse,
+} from '@notionhq/client/build/src/api-endpoints.js';
 import { extractArxivId, fetchArxivMetadata, isArxivUrl } from '../utils/arxiv.js';
+import type {
+  Paper,
+  PapersResponse,
+  UpdatePaperRequest,
+  UpdatePaperResponse,
+  AbstractResponse,
+  ErrorResponse,
+} from '../../shared/types/index.js';
 
-const router = express.Router();
+const router: Router = express.Router();
+
+// Notion API error type
+interface NotionAPIError extends Error {
+  code?: string;
+  status?: number;
+}
+
+// Property lookup result type
+interface PropertyLookupResult {
+  name: string;
+  property: PageObjectResponse['properties'][string];
+}
 
 // Lazy initialization of Notion client (to ensure env vars are loaded)
-let notion = null;
-function getNotionClient() {
+let notion: Client | null = null;
+
+function getNotionClient(): Client {
   if (!notion) {
     notion = new Client({
       auth: process.env.NOTION_API_KEY
@@ -15,14 +41,14 @@ function getNotionClient() {
   return notion;
 }
 
-function getDatabaseId() {
+function getDatabaseId(): string | undefined {
   return process.env.NOTION_DATABASE_ID;
 }
 
 /**
  * Helper function to extract text from Notion rich text array
  */
-function extractText(richTextArray) {
+function extractText(richTextArray: RichTextItemResponse[] | undefined): string {
   if (!richTextArray || !Array.isArray(richTextArray)) return '';
   return richTextArray.map(item => item.plain_text || '').join('');
 }
@@ -30,7 +56,7 @@ function extractText(richTextArray) {
 /**
  * Helper function to extract page content from blocks
  */
-async function getPageContent(pageId) {
+async function getPageContent(pageId: string): Promise<string> {
   try {
     const blocks = await getNotionClient().blocks.children.list({
       block_id: pageId,
@@ -39,36 +65,38 @@ async function getPageContent(pageId) {
 
     let content = '';
     for (const block of blocks.results) {
-      switch (block.type) {
+      const typedBlock = block as BlockObjectResponse;
+      
+      switch (typedBlock.type) {
         case 'paragraph':
-          content += extractText(block.paragraph?.rich_text) + '\n\n';
+          content += extractText(typedBlock.paragraph?.rich_text) + '\n\n';
           break;
         case 'heading_1':
-          content += '# ' + extractText(block.heading_1?.rich_text) + '\n\n';
+          content += '# ' + extractText(typedBlock.heading_1?.rich_text) + '\n\n';
           break;
         case 'heading_2':
-          content += '## ' + extractText(block.heading_2?.rich_text) + '\n\n';
+          content += '## ' + extractText(typedBlock.heading_2?.rich_text) + '\n\n';
           break;
         case 'heading_3':
-          content += '### ' + extractText(block.heading_3?.rich_text) + '\n\n';
+          content += '### ' + extractText(typedBlock.heading_3?.rich_text) + '\n\n';
           break;
         case 'bulleted_list_item':
-          content += '- ' + extractText(block.bulleted_list_item?.rich_text) + '\n';
+          content += '- ' + extractText(typedBlock.bulleted_list_item?.rich_text) + '\n';
           break;
         case 'numbered_list_item':
-          content += '1. ' + extractText(block.numbered_list_item?.rich_text) + '\n';
+          content += '1. ' + extractText(typedBlock.numbered_list_item?.rich_text) + '\n';
           break;
         case 'code':
-          content += '```\n' + extractText(block.code?.rich_text) + '\n```\n\n';
+          content += '```\n' + extractText(typedBlock.code?.rich_text) + '\n```\n\n';
           break;
         case 'quote':
-          content += '> ' + extractText(block.quote?.rich_text) + '\n\n';
+          content += '> ' + extractText(typedBlock.quote?.rich_text) + '\n\n';
           break;
         case 'callout':
-          content += '> ' + extractText(block.callout?.rich_text) + '\n\n';
+          content += '> ' + extractText(typedBlock.callout?.rich_text) + '\n\n';
           break;
         case 'toggle':
-          content += extractText(block.toggle?.rich_text) + '\n';
+          content += extractText(typedBlock.toggle?.rich_text) + '\n';
           break;
         default:
           // Skip unsupported block types
@@ -78,19 +106,20 @@ async function getPageContent(pageId) {
 
     return content.trim();
   } catch (error) {
-    console.error(`Failed to get content for page ${pageId}:`, error.message);
+    const err = error as Error;
+    console.error(`Failed to get content for page ${pageId}:`, err.message);
     return '';
   }
 }
 
 /**
  * Auto-detect a property by type from the page properties
- * @param {Object} properties - Notion page properties
- * @param {string} type - Property type to find (e.g., 'url', 'multi_select')
- * @param {string[]} preferredNames - Preferred property names to check first
- * @returns {Object|null} The found property or null
  */
-function findPropertyByType(properties, type, preferredNames = []) {
+function findPropertyByType(
+  properties: PageObjectResponse['properties'],
+  type: string,
+  preferredNames: string[] = []
+): PropertyLookupResult | null {
   // First check preferred names
   for (const name of preferredNames) {
     if (properties[name]?.type === type) {
@@ -113,36 +142,42 @@ function findPropertyByType(properties, type, preferredNames = []) {
  * Required properties: Note (title), Note Type (select)
  * Optional properties: Tags (multi_select), Authors (rich_text), URL (url), Category (select)
  */
-async function transformNotionPage(page, includeContent = true) {
+async function transformNotionPage(page: PageObjectResponse, includeContent = true): Promise<Paper> {
   const properties = page.properties;
   
   // REQUIRED: Extract title (Note property - this is the title type)
-  const title = extractText(properties.Note?.title) || 'Untitled';
+  const noteProperty = properties.Note;
+  const title = noteProperty?.type === 'title' 
+    ? extractText(noteProperty.title) 
+    : 'Untitled';
   
   // OPTIONAL: Extract tags - try common names or auto-detect multi_select
-  let tags = [];
-  if (properties.Tags?.multi_select) {
-    tags = properties.Tags.multi_select.map(tag => tag.name);
+  let tags: string[] = [];
+  const tagsProperty = properties.Tags;
+  if (tagsProperty?.type === 'multi_select') {
+    tags = tagsProperty.multi_select.map(tag => tag.name);
   } else {
     // Try to find any multi_select property
     const multiSelectProp = findPropertyByType(properties, 'multi_select', ['Tags', 'Labels', 'Topics']);
-    if (multiSelectProp) {
+    if (multiSelectProp && multiSelectProp.property.type === 'multi_select') {
       tags = multiSelectProp.property.multi_select?.map(tag => tag.name) || [];
     }
   }
   
   // OPTIONAL: Extract authors - try common names or auto-detect rich_text
   let authors = '';
-  if (properties.Authors?.rich_text) {
-    authors = extractText(properties.Authors.rich_text);
-  } else if (properties.Author?.rich_text) {
-    authors = extractText(properties.Author.rich_text);
+  const authorsProperty = properties.Authors;
+  const authorProperty = properties.Author;
+  if (authorsProperty?.type === 'rich_text') {
+    authors = extractText(authorsProperty.rich_text);
+  } else if (authorProperty?.type === 'rich_text') {
+    authors = extractText(authorProperty.rich_text);
   }
   
   // OPTIONAL: Extract URL - try common names or auto-detect url type
   let url = '';
   const urlProp = findPropertyByType(properties, 'url', ['URL', 'userDefined:URL', 'Link', 'Paper URL', 'Source']);
-  if (urlProp) {
+  if (urlProp && urlProp.property.type === 'url') {
     url = urlProp.property.url || '';
   }
   
@@ -169,7 +204,7 @@ async function transformNotionPage(page, includeContent = true) {
  * GET /api/papers
  * Fetch all papers from Notion database
  */
-router.get('/papers', async (req, res) => {
+router.get('/papers', async (_req: Request, res: Response<PapersResponse | ErrorResponse>) => {
   try {
     const databaseId = getDatabaseId();
     if (!databaseId) {
@@ -206,7 +241,9 @@ router.get('/papers', async (req, res) => {
 
     // Transform pages to paper objects (with content)
     const papers = await Promise.all(
-      response.results.map(page => transformNotionPage(page, true))
+      response.results
+        .filter((page): page is PageObjectResponse => 'properties' in page)
+        .map(page => transformNotionPage(page, true))
     );
 
     res.json({
@@ -215,16 +252,17 @@ router.get('/papers', async (req, res) => {
       hasMore: response.has_more
     });
   } catch (error) {
-    console.error('Failed to fetch papers:', error);
+    const err = error as NotionAPIError;
+    console.error('Failed to fetch papers:', err);
     
-    if (error.code === 'unauthorized') {
+    if (err.code === 'unauthorized') {
       return res.status(401).json({
         error: 'Unauthorized',
         message: 'Invalid Notion API key. Please check your NOTION_API_KEY in server/.env'
       });
     }
     
-    if (error.code === 'object_not_found') {
+    if (err.code === 'object_not_found') {
       return res.status(404).json({
         error: 'Database not found',
         message: 'The specified database was not found. Please check your NOTION_DATABASE_ID and ensure the integration has access to the database.'
@@ -233,7 +271,7 @@ router.get('/papers', async (req, res) => {
 
     res.status(500).json({ 
       error: 'Failed to fetch papers',
-      message: error.message 
+      message: err.message 
     });
   }
 });
@@ -242,18 +280,27 @@ router.get('/papers', async (req, res) => {
  * GET /api/papers/:id
  * Fetch a single paper by ID
  */
-router.get('/papers/:id', async (req, res) => {
+router.get('/papers/:id', async (req: Request<{ id: string }>, res: Response<Paper | ErrorResponse>) => {
   try {
     const { id } = req.params;
     
     const page = await getNotionClient().pages.retrieve({ page_id: id });
-    const paper = await transformNotionPage(page, true);
+    
+    if (!('properties' in page)) {
+      return res.status(404).json({
+        error: 'Paper not found',
+        message: `No paper found with ID: ${id}`
+      });
+    }
+    
+    const paper = await transformNotionPage(page as PageObjectResponse, true);
     
     res.json(paper);
   } catch (error) {
-    console.error(`Failed to fetch paper ${req.params.id}:`, error);
+    const err = error as NotionAPIError;
+    console.error(`Failed to fetch paper ${req.params.id}:`, err);
     
-    if (error.code === 'object_not_found') {
+    if (err.code === 'object_not_found') {
       return res.status(404).json({
         error: 'Paper not found',
         message: `No paper found with ID: ${req.params.id}`
@@ -262,7 +309,7 @@ router.get('/papers/:id', async (req, res) => {
     
     res.status(500).json({ 
       error: 'Failed to fetch paper',
-      message: error.message 
+      message: err.message 
     });
   }
 });
@@ -271,13 +318,16 @@ router.get('/papers/:id', async (req, res) => {
  * PATCH /api/papers/:id
  * Update paper review stats in Notion
  */
-router.patch('/papers/:id', async (req, res) => {
+router.patch('/papers/:id', async (
+  req: Request<{ id: string }, UpdatePaperResponse | ErrorResponse, UpdatePaperRequest>,
+  res: Response<UpdatePaperResponse | ErrorResponse>
+) => {
   try {
     const { id } = req.params;
     const { lastReviewed, masteryScore, reviewCount } = req.body;
 
     // Build properties to update
-    const properties = {};
+    const properties: Record<string, unknown> = {};
     
     if (lastReviewed) {
       properties['Last Reviewed'] = {
@@ -309,15 +359,18 @@ router.patch('/papers/:id', async (req, res) => {
 
     const response = await getNotionClient().pages.update({
       page_id: id,
-      properties
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      properties: properties as any
     });
 
     res.json({
       success: true,
-      updatedAt: response.last_edited_time
+      updatedAt: 'last_edited_time' in response ? response.last_edited_time : new Date().toISOString()
     });
   } catch (error) {
-    if (error.code === 'object_not_found') {
+    const err = error as NotionAPIError;
+    
+    if (err.code === 'object_not_found') {
       console.warn(`Paper not found: ${req.params.id}`);
       return res.status(404).json({
         error: 'Paper not found',
@@ -325,20 +378,20 @@ router.patch('/papers/:id', async (req, res) => {
       });
     }
     
-    if (error.code === 'validation_error') {
+    if (err.code === 'validation_error') {
       // Quiet log for missing properties - this is expected if user hasn't set up Notion columns
-      console.log(`Notion sync skipped: missing properties in database (this is OK - stats saved locally)`);
+      console.log('Notion sync skipped: missing properties in database (this is OK - stats saved locally)');
       return res.status(400).json({
         error: 'Validation error',
-        message: error.message,
+        message: err.message,
         hint: 'Optional: Add "Last Reviewed" (date), "Mastery Score" (number), and "Review Count" (number) to your Notion database to sync stats'
       });
     }
     
-    console.error(`Failed to update paper ${req.params.id}:`, error);
+    console.error(`Failed to update paper ${req.params.id}:`, err);
     res.status(500).json({
       error: 'Failed to update paper',
-      message: error.message
+      message: err.message
     });
   }
 });
@@ -347,16 +400,30 @@ router.patch('/papers/:id', async (req, res) => {
  * GET /api/papers/:id/abstract
  * Fetch abstract from arXiv if the paper has an arXiv URL
  */
-router.get('/papers/:id/abstract', async (req, res) => {
+router.get('/papers/:id/abstract', async (
+  req: Request<{ id: string }>,
+  res: Response<AbstractResponse | ErrorResponse>
+) => {
   try {
     const { id } = req.params;
 
     // Get the paper from Notion to get its URL
     const page = await getNotionClient().pages.retrieve({ page_id: id });
     
+    if (!('properties' in page)) {
+      return res.status(404).json({
+        error: 'Paper not found',
+        message: `No paper found with ID: ${id}`
+      });
+    }
+    
     // Auto-detect URL property
-    const urlProp = findPropertyByType(page.properties, 'url', ['URL', 'userDefined:URL', 'Link', 'Paper URL', 'Source']);
-    const url = urlProp?.property.url || '';
+    const urlProp = findPropertyByType(
+      (page as PageObjectResponse).properties, 
+      'url', 
+      ['URL', 'userDefined:URL', 'Link', 'Paper URL', 'Source']
+    );
+    const url = urlProp?.property.type === 'url' ? urlProp.property.url || '' : '';
 
     if (!url) {
       return res.status(404).json({
@@ -369,8 +436,7 @@ router.get('/papers/:id/abstract', async (req, res) => {
     if (!isArxivUrl(url)) {
       return res.status(400).json({
         error: 'Not an arXiv paper',
-        message: 'The paper URL is not an arXiv link. Abstract fetching is only supported for arXiv papers.',
-        url
+        message: 'The paper URL is not an arXiv link. Abstract fetching is only supported for arXiv papers.'
       });
     }
 
@@ -381,14 +447,13 @@ router.get('/papers/:id/abstract', async (req, res) => {
     if (!metadata) {
       return res.status(404).json({
         error: 'Abstract not found',
-        message: `Could not fetch abstract from arXiv for ID: ${arxivId}`,
-        arxivId
+        message: `Could not fetch abstract from arXiv for ID: ${arxivId}`
       });
     }
 
     res.json({
       paperId: id,
-      arxivId,
+      arxivId: arxivId!,
       url,
       abstract: metadata.abstract,
       arxivTitle: metadata.title,
@@ -396,9 +461,10 @@ router.get('/papers/:id/abstract', async (req, res) => {
       arxivPublished: metadata.published
     });
   } catch (error) {
-    console.error(`Failed to fetch abstract for paper ${req.params.id}:`, error);
+    const err = error as NotionAPIError;
+    console.error(`Failed to fetch abstract for paper ${req.params.id}:`, err);
 
-    if (error.code === 'object_not_found') {
+    if (err.code === 'object_not_found') {
       return res.status(404).json({
         error: 'Paper not found',
         message: `No paper found with ID: ${req.params.id}`
@@ -407,16 +473,24 @@ router.get('/papers/:id/abstract', async (req, res) => {
 
     res.status(500).json({
       error: 'Failed to fetch abstract',
-      message: error.message
+      message: err.message
     });
   }
 });
+
+// Request body type for POST /abstract
+interface AbstractRequestBody {
+  url?: string;
+}
 
 /**
  * POST /api/abstract
  * Fetch abstract directly from a URL (doesn't require Notion paper ID)
  */
-router.post('/abstract', async (req, res) => {
+router.post('/abstract', async (
+  req: Request<object, AbstractResponse | ErrorResponse, AbstractRequestBody>,
+  res: Response<AbstractResponse | ErrorResponse>
+) => {
   try {
     const { url } = req.body;
 
@@ -430,8 +504,7 @@ router.post('/abstract', async (req, res) => {
     if (!isArxivUrl(url)) {
       return res.status(400).json({
         error: 'Not an arXiv URL',
-        message: 'The provided URL is not an arXiv link',
-        url
+        message: 'The provided URL is not an arXiv link'
       });
     }
 
@@ -441,13 +514,12 @@ router.post('/abstract', async (req, res) => {
     if (!metadata) {
       return res.status(404).json({
         error: 'Abstract not found',
-        message: `Could not fetch abstract from arXiv for ID: ${arxivId}`,
-        arxivId
+        message: `Could not fetch abstract from arXiv for ID: ${arxivId}`
       });
     }
 
     res.json({
-      arxivId,
+      arxivId: arxivId!,
       url,
       abstract: metadata.abstract,
       title: metadata.title,
@@ -455,10 +527,11 @@ router.post('/abstract', async (req, res) => {
       published: metadata.published
     });
   } catch (error) {
-    console.error('Failed to fetch abstract:', error);
+    const err = error as Error;
+    console.error('Failed to fetch abstract:', err);
     res.status(500).json({
       error: 'Failed to fetch abstract',
-      message: error.message
+      message: err.message
     });
   }
 });

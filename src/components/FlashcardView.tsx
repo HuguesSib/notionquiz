@@ -1,30 +1,44 @@
-import { useState, useEffect } from 'react';
 import { Check, X, ArrowRight } from 'lucide-react';
+import type { MCQFlashcard, QuestionConcept } from '@shared/types';
 
-export default function FlashcardView({ card, selectedAnswer, setSelectedAnswer, isAnswered, onSubmit }) {
-  const [localSelected, setLocalSelected] = useState(selectedAnswer);
+interface FlashcardViewProps {
+  card: MCQFlashcard;
+  selectedAnswer: number | null;
+  setSelectedAnswer: (index: number) => void;
+  isAnswered: boolean;
+  onSubmit: () => void;
+}
 
-  useEffect(() => {
-    setLocalSelected(selectedAnswer);
-  }, [selectedAnswer, card]);
+const conceptLabels: Record<QuestionConcept, string> = {
+  main_contribution: 'Key Contribution',
+  technical: 'Technical Insight',
+  comparison: 'Comparison',
+  practical: 'Practical'
+};
 
-  const handleSelect = (index) => {
+export default function FlashcardView({ 
+  card, 
+  selectedAnswer, 
+  setSelectedAnswer, 
+  isAnswered, 
+  onSubmit 
+}: FlashcardViewProps) {
+  const handleSelect = (index: number) => {
     if (isAnswered) return; // Can't change after answering
-    setLocalSelected(index);
     setSelectedAnswer(index);
   };
 
   const handleSubmit = () => {
-    if (localSelected === null || localSelected === undefined) return;
+    if (selectedAnswer === null || selectedAnswer === undefined) return;
     onSubmit();
   };
 
-  const getOptionStyle = (index) => {
+  const getOptionStyle = (index: number): string => {
     const baseStyle = "w-full p-4 text-left rounded-lg border-2 transition-all ";
     
     if (!isAnswered) {
       // Before answering
-      if (localSelected === index) {
+      if (selectedAnswer === index) {
         return baseStyle + "border-indigo-500 bg-indigo-50 text-indigo-900";
       }
       return baseStyle + "border-slate-200 bg-white hover:border-indigo-300 hover:bg-slate-50 text-slate-700";
@@ -32,7 +46,7 @@ export default function FlashcardView({ card, selectedAnswer, setSelectedAnswer,
     
     // After answering
     const isCorrect = index === card.correctIndex;
-    const isSelected = localSelected === index;
+    const isSelected = selectedAnswer === index;
     
     if (isCorrect) {
       return baseStyle + "border-green-500 bg-green-50 text-green-900";
@@ -43,20 +57,13 @@ export default function FlashcardView({ card, selectedAnswer, setSelectedAnswer,
     return baseStyle + "border-slate-200 bg-slate-50 text-slate-500";
   };
 
-  const conceptLabels = {
-    main_contribution: 'Key Contribution',
-    technical: 'Technical Insight',
-    comparison: 'Comparison',
-    practical: 'Practical'
-  };
-
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
       <div className="p-6">
         {/* Tags */}
         <div className="flex items-center gap-2 mb-4">
           <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs font-medium">
-            {conceptLabels[card.concept] || card.concept}
+            {card.concept ? conceptLabels[card.concept] : 'General'}
           </span>
           {card.relatedPaper && (
             <span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs">
@@ -82,7 +89,7 @@ export default function FlashcardView({ card, selectedAnswer, setSelectedAnswer,
                 {isAnswered && index === card.correctIndex && (
                   <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
                 )}
-                {isAnswered && localSelected === index && index !== card.correctIndex && (
+                {isAnswered && selectedAnswer === index && index !== card.correctIndex && (
                   <X className="w-5 h-5 text-red-600 flex-shrink-0" />
                 )}
               </div>
@@ -93,17 +100,17 @@ export default function FlashcardView({ card, selectedAnswer, setSelectedAnswer,
         {/* Explanation after answering */}
         {isAnswered && card.explanation && (
           <div className={`mt-6 p-4 rounded-lg ${
-            localSelected === card.correctIndex 
+            selectedAnswer === card.correctIndex 
               ? 'bg-green-50 border border-green-200' 
               : 'bg-amber-50 border border-amber-200'
           }`}>
             <p className={`text-sm font-medium mb-1 ${
-              localSelected === card.correctIndex ? 'text-green-800' : 'text-amber-800'
+              selectedAnswer === card.correctIndex ? 'text-green-800' : 'text-amber-800'
             }`}>
-              {localSelected === card.correctIndex ? '✓ Correct!' : '✗ Not quite'}
+              {selectedAnswer === card.correctIndex ? '✓ Correct!' : '✗ Not quite'}
             </p>
             <p className={`text-sm ${
-              localSelected === card.correctIndex ? 'text-green-700' : 'text-amber-700'
+              selectedAnswer === card.correctIndex ? 'text-green-700' : 'text-amber-700'
             }`}>
               {card.explanation}
             </p>
@@ -116,7 +123,7 @@ export default function FlashcardView({ card, selectedAnswer, setSelectedAnswer,
         {!isAnswered ? (
           <button
             onClick={handleSubmit}
-            disabled={localSelected === null || localSelected === undefined}
+            disabled={selectedAnswer === null || selectedAnswer === undefined}
             className="px-6 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             Check Answer

@@ -1,7 +1,10 @@
 // ==================== CONSTANTS ====================
+
+import type { Paper, RatingMap } from '@shared/types';
+
 export const CARDS_PER_SESSION = 6;
 
-export const RATING_MAP = {
+export const RATING_MAP: RatingMap = {
   forgot: { label: '😫 Forgot', value: 0, color: 'bg-red-500' },
   struggled: { label: '🤔 Struggled', value: 2, color: 'bg-amber-500' },
   good: { label: '👍 Good', value: 4, color: 'bg-green-500' },
@@ -10,7 +13,7 @@ export const RATING_MAP = {
 
 // ==================== PRE-LOADED PAPERS FROM NOTION ====================
 // These serve as fallback data when Notion API is unavailable
-export const INITIAL_PAPERS = [
+export const INITIAL_PAPERS: Paper[] = [
   {
     id: "2efe9298-d1ff-80ed-aa32-f2ebaa4605ce",
     title: "MapAnything: Universal Feed-Forward Metric 3D Reconstruction",

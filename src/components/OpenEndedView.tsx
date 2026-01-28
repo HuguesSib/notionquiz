@@ -1,5 +1,35 @@
-import { useState, useEffect } from 'react';
+import { ChangeEvent } from 'react';
 import { ArrowRight, Loader2 } from 'lucide-react';
+import type { OpenEndedFlashcard, FeedbackObject, QuestionConcept, QuestionDifficulty } from '@shared/types';
+
+interface OpenEndedViewProps {
+  card: OpenEndedFlashcard;
+  userText: string;
+  setUserText: (text: string) => void;
+  isAnswered: boolean;
+  isEvaluating: boolean;
+  feedback?: FeedbackObject;
+  onSubmit: () => void;
+}
+
+interface DifficultyInfo {
+  label: string;
+  color: string;
+}
+
+const difficultyLabels: Record<QuestionDifficulty, DifficultyInfo> = {
+  understand: { label: 'Explain', color: 'bg-blue-100 text-blue-700' },
+  apply: { label: 'Apply', color: 'bg-green-100 text-green-700' },
+  analyze: { label: 'Analyze', color: 'bg-purple-100 text-purple-700' },
+  evaluate: { label: 'Evaluate', color: 'bg-amber-100 text-amber-700' }
+};
+
+const conceptLabels: Record<QuestionConcept, string> = {
+  main_contribution: 'Key Contribution',
+  technical: 'Technical Insight',
+  comparison: 'Comparison',
+  practical: 'Practical'
+};
 
 export default function OpenEndedView({
   card,
@@ -9,43 +39,21 @@ export default function OpenEndedView({
   isEvaluating,
   feedback,
   onSubmit
-}) {
-  const [localText, setLocalText] = useState(userText || '');
-
-  useEffect(() => {
-    setLocalText(userText || '');
-  }, [userText, card]);
-
-  const handleTextChange = (e) => {
+}: OpenEndedViewProps) {
+  const handleTextChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     if (isAnswered) return;
-    const text = e.target.value;
-    setLocalText(text);
-    setUserText(text);
+    setUserText(e.target.value);
   };
 
   const handleSubmit = () => {
-    if (!localText.trim() || isEvaluating) return;
+    if (!userText.trim() || isEvaluating) return;
     onSubmit();
   };
 
-  const difficultyLabels = {
-    understand: { label: 'Explain', color: 'bg-blue-100 text-blue-700' },
-    apply: { label: 'Apply', color: 'bg-green-100 text-green-700' },
-    analyze: { label: 'Analyze', color: 'bg-purple-100 text-purple-700' },
-    evaluate: { label: 'Evaluate', color: 'bg-amber-100 text-amber-700' }
-  };
-
-  const conceptLabels = {
-    main_contribution: 'Key Contribution',
-    technical: 'Technical Insight',
-    comparison: 'Comparison',
-    practical: 'Practical'
-  };
-
-  const difficultyInfo = difficultyLabels[card.difficulty] || difficultyLabels.understand;
+  const difficultyInfo = card.difficulty ? difficultyLabels[card.difficulty] : difficultyLabels.understand;
 
   // Calculate score color
-  const getScoreColor = (score) => {
+  const getScoreColor = (score: number): string => {
     if (score >= 80) return 'text-green-600';
     if (score >= 60) return 'text-amber-600';
     return 'text-red-600';
@@ -60,7 +68,7 @@ export default function OpenEndedView({
             {difficultyInfo.label}
           </span>
           <span className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded text-xs font-medium">
-            {conceptLabels[card.concept] || card.concept}
+            {card.concept ? conceptLabels[card.concept] : 'General'}
           </span>
           <span className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-xs">
             Open-ended
@@ -73,7 +81,7 @@ export default function OpenEndedView({
         {/* Answer textarea */}
         <div className="mb-4">
           <textarea
-            value={localText}
+            value={userText}
             onChange={handleTextChange}
             disabled={isAnswered}
             placeholder="Type your answer here... (2-4 sentences recommended)"
@@ -86,7 +94,7 @@ export default function OpenEndedView({
           />
           {!isAnswered && (
             <p className="text-xs text-slate-500 mt-1">
-              {localText.length > 0 ? `${localText.split(/\s+/).filter(Boolean).length} words` : 'Be specific and mention key concepts'}
+              {userText.length > 0 ? `${userText.split(/\s+/).filter(Boolean).length} words` : 'Be specific and mention key concepts'}
             </p>
           )}
         </div>
@@ -106,7 +114,7 @@ export default function OpenEndedView({
               </div>
 
               {/* What was correct */}
-              {feedback.correct?.length > 0 && (
+              {feedback.correct && feedback.correct.length > 0 && (
                 <div className="mb-3">
                   <p className="text-sm font-medium text-green-700 mb-1">What you got right:</p>
                   <ul className="text-sm text-green-600 space-y-1">
@@ -121,7 +129,7 @@ export default function OpenEndedView({
               )}
 
               {/* What was missing */}
-              {feedback.missing?.length > 0 && (
+              {feedback.missing && feedback.missing.length > 0 && (
                 <div className="mb-3">
                   <p className="text-sm font-medium text-amber-700 mb-1">What to add:</p>
                   <ul className="text-sm text-amber-600 space-y-1">
@@ -178,7 +186,7 @@ export default function OpenEndedView({
         {!isAnswered ? (
           <button
             onClick={handleSubmit}
-            disabled={!localText.trim() || isEvaluating}
+            disabled={!userText.trim() || isEvaluating}
             className="px-6 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {isEvaluating ? (

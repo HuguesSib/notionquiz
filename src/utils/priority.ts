@@ -1,14 +1,16 @@
 // ==================== PRIORITY CALCULATION ====================
 
+import type { Paper, PaperStats, PriorityLabel } from '@shared/types';
+
 /**
  * Calculate review priority for a paper
  * Higher priority = should be reviewed sooner
  * 
- * @param {Object} paper - Paper object
- * @param {Object} stats - Review stats for the paper
- * @returns {number} Priority score
+ * @param paper - Paper object
+ * @param stats - Review stats for the paper
+ * @returns Priority score
  */
-export function calculatePriority(paper, stats) {
+export function calculatePriority(_paper: Paper, stats?: PaperStats): number {
   let priority = 0;
   
   // Never reviewed: high priority (+50)
@@ -23,7 +25,7 @@ export function calculatePriority(paper, stats) {
   }
   
   // Low mastery score (+20)
-  if (stats?.masteryScore < 50) {
+  if (stats?.masteryScore !== undefined && stats.masteryScore < 50) {
     priority += 20;
   }
   
@@ -37,10 +39,10 @@ export function calculatePriority(paper, stats) {
 
 /**
  * Get priority label for display
- * @param {number} priority - Priority score
- * @returns {{ label: string, className: string }}
+ * @param priority - Priority score
+ * @returns Label and CSS class name
  */
-export function getPriorityLabel(priority) {
+export function getPriorityLabel(priority: number): PriorityLabel {
   if (priority > 60) {
     return { label: 'Due', className: 'bg-red-100 text-red-700' };
   }
@@ -52,11 +54,11 @@ export function getPriorityLabel(priority) {
 
 /**
  * Sort papers by priority (highest first)
- * @param {Array} papers - Array of paper objects
- * @param {Object} paperStats - Object with paper stats keyed by paper id
- * @returns {Array} Sorted papers
+ * @param papers - Array of paper objects
+ * @param paperStats - Object with paper stats keyed by paper id
+ * @returns Sorted papers
  */
-export function sortByPriority(papers, paperStats) {
+export function sortByPriority(papers: Paper[], paperStats: Record<string, PaperStats>): Paper[] {
   return [...papers].sort((a, b) => {
     const priorityA = calculatePriority(a, paperStats[a.id]);
     const priorityB = calculatePriority(b, paperStats[b.id]);

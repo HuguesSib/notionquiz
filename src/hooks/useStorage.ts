@@ -1,17 +1,28 @@
 // ==================== STORAGE HELPERS ====================
 // Using localStorage for persistent storage
 
-const storage = {
-  async get(key) {
+/**
+ * Storage interface for type-safe storage operations
+ */
+interface Storage {
+  get<T = unknown>(key: string): Promise<T | null>;
+  set<T = unknown>(key: string, value: T): Promise<boolean>;
+  list(prefix: string): Promise<string[]>;
+  remove(key: string): Promise<boolean>;
+  clear(): Promise<boolean>;
+}
+
+const storage: Storage = {
+  async get<T = unknown>(key: string): Promise<T | null> {
     try {
       const result = localStorage.getItem(key);
-      return result ? JSON.parse(result) : null;
+      return result ? (JSON.parse(result) as T) : null;
     } catch { 
       return null; 
     }
   },
   
-  async set(key, value) {
+  async set<T = unknown>(key: string, value: T): Promise<boolean> {
     try {
       localStorage.setItem(key, JSON.stringify(value));
       return true;
@@ -20,9 +31,9 @@ const storage = {
     }
   },
   
-  async list(prefix) {
+  async list(prefix: string): Promise<string[]> {
     try {
-      const keys = [];
+      const keys: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && key.startsWith(prefix)) {
@@ -35,7 +46,7 @@ const storage = {
     }
   },
 
-  async remove(key) {
+  async remove(key: string): Promise<boolean> {
     try {
       localStorage.removeItem(key);
       return true;
@@ -44,7 +55,7 @@ const storage = {
     }
   },
 
-  async clear() {
+  async clear(): Promise<boolean> {
     try {
       localStorage.clear();
       return true;

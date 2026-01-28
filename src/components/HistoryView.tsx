@@ -1,8 +1,14 @@
 import { Calendar, CheckCircle2, History, X } from 'lucide-react';
+import type { Session } from '@shared/types';
 
-export default function HistoryView({ sessions, onBack }) {
+interface HistoryViewProps {
+  sessions: Session[];
+  onBack: () => void;
+}
+
+export default function HistoryView({ sessions, onBack }: HistoryViewProps) {
   const sortedSessions = [...sessions].sort((a, b) => 
-    new Date(b.completedAt || b.startedAt) - new Date(a.completedAt || a.startedAt)
+    new Date(b.completedAt || b.startedAt).getTime() - new Date(a.completedAt || a.startedAt).getTime()
   );
 
   return (

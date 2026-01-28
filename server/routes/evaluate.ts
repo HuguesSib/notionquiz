@@ -1,28 +1,28 @@
-import express from 'express';
+import express, { Request, Response, Router } from 'express';
+import type {
+  EvaluateRequest,
+  EvaluateResponse,
+  ErrorResponse,
+} from '../../shared/types/index.js';
 
-const router = express.Router();
+const router: Router = express.Router();
+
+/**
+ * Claude API response type
+ */
+interface ClaudeAPIResponse {
+  content?: Array<{ text?: string }>;
+  error?: { message?: string };
+}
 
 /**
  * POST /api/evaluate
  * Evaluate an open-ended answer using Claude AI
- *
- * Body: {
- *   question: string,
- *   expectedPoints: string[],
- *   userAnswer: string,
- *   paperContext?: string  // Optional paper content for context
- * }
- *
- * Returns: {
- *   score: number (0-100),
- *   feedback: {
- *     correct: string[],  // Points the user got right
- *     missing: string[],  // Points the user missed
- *     suggestion: string  // Actionable feedback
- *   }
- * }
  */
-router.post('/evaluate', async (req, res) => {
+router.post('/evaluate', async (
+  req: Request<object, EvaluateResponse | ErrorResponse, EvaluateRequest>,
+  res: Response<EvaluateResponse | ErrorResponse>
+) => {
   try {
     const { question, expectedPoints, userAnswer, paperContext } = req.body;
 
@@ -60,7 +60,7 @@ router.post('/evaluate', async (req, res) => {
       })
     });
 
-    const data = await response.json();
+    const data = await response.json() as ClaudeAPIResponse;
 
     if (!response.ok) {
       console.error('Claude API error:', data);
@@ -76,10 +76,11 @@ router.post('/evaluate', async (req, res) => {
 
     res.json(evaluation);
   } catch (error) {
-    console.error('Evaluation error:', error);
+    const err = error as Error;
+    console.error('Evaluation error:', err);
     res.status(500).json({
       error: 'Evaluation failed',
-      message: error.message
+      message: err.message
     });
   }
 });
@@ -87,8 +88,13 @@ router.post('/evaluate', async (req, res) => {
 /**
  * Build the evaluation prompt for Claude
  */
-function buildEvaluationPrompt(question, expectedPoints, userAnswer, paperContext) {
-  const expectedPointsSection = expectedPoints?.length > 0
+function buildEvaluationPrompt(
+  question: string,
+  expectedPoints: string[] | undefined,
+  userAnswer: string,
+  paperContext: string | undefined
+): string {
+  const expectedPointsSection = expectedPoints?.length
     ? `\nEXPECTED KEY POINTS (the answer should cover these):
 ${expectedPoints.map((p, i) => `${i + 1}. ${p}`).join('\n')}`
     : '';
@@ -127,14 +133,26 @@ Be fair but rigorous. A score of 70+ means the answer is acceptable. Be specific
 }
 
 /**
+ * Parsed evaluation result from Claude
+ */
+interface ParsedEvaluation {
+  score?: number;
+  feedback?: {
+    correct?: string[];
+    missing?: string[];
+    suggestion?: string;
+  };
+}
+
+/**
  * Parse Claude's evaluation response into structured format
  */
-function parseEvaluationResponse(responseText) {
+function parseEvaluationResponse(responseText: string): EvaluateResponse {
   try {
     // Try to extract JSON from the response
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
+      const parsed = JSON.parse(jsonMatch[0]) as ParsedEvaluation;
 
       // Validate and normalize the response
       return {

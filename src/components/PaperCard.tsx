@@ -1,14 +1,32 @@
+import { MouseEvent, useMemo } from 'react';
 import { CheckCircle, Clock, ExternalLink, FileText, Sparkles } from 'lucide-react';
 import { calculatePriority } from '../utils/priority';
+import type { Paper, PaperStats } from '@shared/types';
+
+interface MasteryRingProps {
+  percentage: number;
+  size?: number;
+}
+
+interface ColorScheme {
+  stroke: string;
+  bg: string;
+  text: string;
+}
+
+interface StatusBadge {
+  label: string;
+  color: string;
+}
 
 // Circular progress ring component
-function MasteryRing({ percentage, size = 48 }) {
+function MasteryRing({ percentage, size = 48 }: MasteryRingProps) {
   const radius = (size - 6) / 2;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (percentage / 100) * circumference;
   
   // Color based on mastery level
-  const getColor = (pct) => {
+  const getColor = (pct: number): ColorScheme => {
     if (pct >= 80) return { stroke: '#22c55e', bg: '#dcfce7', text: '#166534' }; // green
     if (pct >= 60) return { stroke: '#3b82f6', bg: '#dbeafe', text: '#1e40af' }; // blue
     if (pct >= 40) return { stroke: '#f59e0b', bg: '#fef3c7', text: '#92400e' }; // amber
@@ -54,7 +72,7 @@ function MasteryRing({ percentage, size = 48 }) {
 }
 
 // Get single status badge - considers both urgency and mastery
-function getStatusBadge(stats, priority) {
+function getStatusBadge(stats: PaperStats | undefined, priority: number): StatusBadge {
   const mastery = stats?.masteryScore || 0;
   
   // Never reviewed = New
@@ -77,13 +95,30 @@ function getStatusBadge(stats, priority) {
   return { label: 'Good', color: 'bg-green-100 text-green-700' };
 }
 
-export default function PaperCard({ paper, stats, onSelect, isSelected, hasCachedQuestions }) {
+interface PaperCardProps {
+  paper: Paper;
+  stats?: PaperStats;
+  onSelect: (paper: Paper) => void;
+  isSelected: boolean;
+  hasCachedQuestions: boolean;
+}
+
+export default function PaperCard({ paper, stats, onSelect, isSelected, hasCachedQuestions }: PaperCardProps) {
   const priority = calculatePriority(paper, stats);
   const masteryScore = stats?.masteryScore || 0;
   const statusBadge = getStatusBadge(stats, priority);
-  const daysSinceReview = stats?.lastReviewed 
-    ? Math.floor((Date.now() - new Date(stats.lastReviewed).getTime()) / (1000 * 60 * 60 * 24))
-    : null;
+  // Calculate days since review - Date.now() is intentional here as we want
+  // to show current relative time, not a cached value
+  const daysSinceReview = useMemo(() => {
+    if (!stats?.lastReviewed) return null;
+    // eslint-disable-next-line react-hooks/purity
+    const now = Date.now();
+    return Math.floor((now - new Date(stats.lastReviewed).getTime()) / (1000 * 60 * 60 * 24));
+  }, [stats?.lastReviewed]);
+
+  const handleLinkClick = (e: MouseEvent) => {
+    e.stopPropagation();
+  };
 
   return (
     <div 
@@ -108,7 +143,7 @@ export default function PaperCard({ paper, stats, onSelect, isSelected, hasCache
             </span>
           </div>
           
-          {paper.tags?.length > 0 && (
+          {paper.tags && paper.tags.length > 0 && (
             <div className="flex flex-wrap gap-1 mb-2">
               {paper.tags.slice(0, 3).map((tag, i) => (
                 <span key={i} className="px-2 py-0.5 bg-indigo-100 text-indigo-600 rounded text-xs">
@@ -130,7 +165,7 @@ export default function PaperCard({ paper, stats, onSelect, isSelected, hasCache
                 Never reviewed
               </span>
             )}
-            {stats?.reviewCount > 0 && (
+            {stats?.reviewCount && stats.reviewCount > 0 && (
               <span className="text-slate-400">
                 {stats.reviewCount} review{stats.reviewCount !== 1 ? 's' : ''}
               </span>
@@ -146,7 +181,7 @@ export default function PaperCard({ paper, stats, onSelect, isSelected, hasCache
                 href={paper.url} 
                 target="_blank" 
                 rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
+                onClick={handleLinkClick}
                 className="flex items-center gap-1 text-slate-400 hover:text-indigo-600 ml-auto"
               >
                 <FileText className="w-3 h-3" />
@@ -158,7 +193,7 @@ export default function PaperCard({ paper, stats, onSelect, isSelected, hasCache
                 href={paper.notionUrl} 
                 target="_blank" 
                 rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
+                onClick={handleLinkClick}
                 className="flex items-center gap-1 text-slate-400 hover:text-indigo-600"
               >
                 <ExternalLink className="w-3 h-3" />

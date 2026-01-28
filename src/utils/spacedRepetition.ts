@@ -1,18 +1,24 @@
 // ==================== SPACED REPETITION ====================
 // Based on a simplified SM-2 algorithm
 
+import type { SpacedRepetitionResult, RatingKey } from '@shared/types';
+
 /**
  * Calculate the next review interval based on the SM-2 algorithm
- * @param {number} quality - Quality of recall (0-5 scale)
+ * @param quality - Quality of recall (0-5 scale)
  *   - 0: Complete blackout (Forgot)
  *   - 2: Struggled but recalled with hints
  *   - 4: Good recall with some effort
  *   - 5: Perfect recall
- * @param {number} previousInterval - Previous interval in days (default: 0)
- * @param {number} easeFactor - Current ease factor (default: 2.5)
- * @returns {{ interval: number, easeFactor: number }}
+ * @param previousInterval - Previous interval in days (default: 0)
+ * @param easeFactor - Current ease factor (default: 2.5)
+ * @returns New interval and ease factor
  */
-export function calculateNextReview(quality, previousInterval = 0, easeFactor = 2.5) {
+export function calculateNextReview(
+  quality: number,
+  previousInterval = 0,
+  easeFactor = 2.5
+): SpacedRepetitionResult {
   // If quality < 3, the item needs to be relearned
   if (quality < 3) {
     return { 
@@ -22,7 +28,7 @@ export function calculateNextReview(quality, previousInterval = 0, easeFactor = 
   }
   
   // Calculate new interval
-  let newInterval;
+  let newInterval: number;
   if (previousInterval === 0) {
     newInterval = 1; // First review: 1 day
   } else if (previousInterval === 1) {
@@ -42,26 +48,30 @@ export function calculateNextReview(quality, previousInterval = 0, easeFactor = 
 }
 
 /**
- * Get the quality rating value from a rating key
- * @param {string} ratingKey - Rating key (forgot, struggled, good, perfect)
- * @returns {number} Quality value (0-5)
+ * Quality map for rating keys
  */
-export function getRatingQuality(ratingKey) {
-  const qualityMap = {
-    forgot: 0,
-    struggled: 2,
-    good: 4,
-    perfect: 5
-  };
+const qualityMap: Record<RatingKey, number> = {
+  forgot: 0,
+  struggled: 2,
+  good: 4,
+  perfect: 5
+};
+
+/**
+ * Get the quality rating value from a rating key
+ * @param ratingKey - Rating key (forgot, struggled, good, perfect)
+ * @returns Quality value (0-5)
+ */
+export function getRatingQuality(ratingKey: RatingKey): number {
   return qualityMap[ratingKey] ?? 2;
 }
 
 /**
  * Calculate the due date for next review
- * @param {number} interval - Interval in days
- * @returns {string} ISO date string
+ * @param interval - Interval in days
+ * @returns ISO date string
  */
-export function calculateDueDate(interval) {
+export function calculateDueDate(interval: number): string {
   const dueDate = new Date();
   dueDate.setDate(dueDate.getDate() + interval);
   return dueDate.toISOString();

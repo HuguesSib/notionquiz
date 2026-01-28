@@ -3,10 +3,22 @@
  * Handles ID extraction and abstract fetching from arXiv papers
  */
 
+import type { ArxivMetadata } from '../../shared/types/index.js';
+
+/**
+ * Response from fetchAbstractFromUrl
+ */
+export interface ArxivAbstractResult {
+  abstract: string;
+  arxivTitle: string;
+  arxivAuthors: string[];
+  arxivPublished: string | null;
+}
+
 /**
  * Extract arXiv ID from various URL formats
- * @param {string} url - URL that may contain an arXiv link
- * @returns {string|null} arXiv ID or null if not an arXiv URL
+ * @param url - URL that may contain an arXiv link
+ * @returns arXiv ID or null if not an arXiv URL
  *
  * Handles formats:
  * - https://arxiv.org/abs/2509.13414
@@ -15,7 +27,7 @@
  * - https://arxiv.org/pdf/2509.13414v2.pdf
  * - http://arxiv.org/abs/cs/0501001 (old format)
  */
-export function extractArxivId(url) {
+export function extractArxivId(url: string | null | undefined): string | null {
   if (!url || typeof url !== 'string') return null;
 
   // New format: arxiv.org/abs/YYMM.NNNNN or arxiv.org/pdf/YYMM.NNNNN
@@ -36,19 +48,19 @@ export function extractArxivId(url) {
 
 /**
  * Check if a URL is an arXiv URL
- * @param {string} url - URL to check
- * @returns {boolean}
+ * @param url - URL to check
+ * @returns true if URL is from arXiv
  */
-export function isArxivUrl(url) {
+export function isArxivUrl(url: string | null | undefined): boolean {
   return extractArxivId(url) !== null;
 }
 
 /**
  * Fetch paper metadata from arXiv API
- * @param {string} arxivId - arXiv ID (e.g., "2509.13414" or "cs/0501001")
- * @returns {Promise<{title: string, abstract: string, authors: string[], published: string}|null>}
+ * @param arxivId - arXiv ID (e.g., "2509.13414" or "cs/0501001")
+ * @returns Paper metadata or null if not found
  */
-export async function fetchArxivMetadata(arxivId) {
+export async function fetchArxivMetadata(arxivId: string | null | undefined): Promise<ArxivMetadata | null> {
   if (!arxivId) return null;
 
   try {
@@ -71,20 +83,20 @@ export async function fetchArxivMetadata(arxivId) {
 
     return metadata;
   } catch (error) {
-    console.error(`Failed to fetch arXiv metadata for ${arxivId}:`, error.message);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`Failed to fetch arXiv metadata for ${arxivId}:`, errorMessage);
     return null;
   }
 }
 
 /**
  * Parse arXiv Atom XML response
- * @param {string} xml - Raw XML string from arXiv API
- * @returns {{title: string, abstract: string, authors: string[], published: string}|null}
+ * @param xml - Raw XML string from arXiv API
+ * @returns Parsed metadata or null if parsing fails
  */
-function parseArxivXml(xml) {
+function parseArxivXml(xml: string): ArxivMetadata | null {
   try {
     // Extract title
-    const titleMatch = xml.match(/<title[^>]*>([^<]*(?:<[^>]*>[^<]*)*)<\/title>/);
     // Filter out the feed title (which is "ArXiv Query..."), get the entry title
     const allTitles = xml.match(/<entry>[\s\S]*?<title[^>]*>([\s\S]*?)<\/title>/);
     const title = allTitles ? allTitles[1].replace(/\s+/g, ' ').trim() : null;
@@ -99,7 +111,7 @@ function parseArxivXml(xml) {
 
     // Extract published date
     const publishedMatch = xml.match(/<published>([^<]+)<\/published>/);
-    const published = publishedMatch ? publishedMatch[1].trim() : null;
+    const published = publishedMatch ? publishedMatch[1].trim() : '';
 
     // Check if we actually found an entry (not just an empty result)
     if (!title || !abstract) {
@@ -113,17 +125,18 @@ function parseArxivXml(xml) {
       published
     };
   } catch (error) {
-    console.error('Failed to parse arXiv XML:', error.message);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('Failed to parse arXiv XML:', errorMessage);
     return null;
   }
 }
 
 /**
  * Fetch abstract from URL if it's an arXiv paper
- * @param {string} url - Paper URL
- * @returns {Promise<{abstract: string, arxivTitle: string, arxivAuthors: string[], arxivPublished: string}|null>}
+ * @param url - Paper URL
+ * @returns Abstract and metadata or null if not an arXiv paper
  */
-export async function fetchAbstractFromUrl(url) {
+export async function fetchAbstractFromUrl(url: string | null | undefined): Promise<ArxivAbstractResult | null> {
   const arxivId = extractArxivId(url);
   if (!arxivId) return null;
 

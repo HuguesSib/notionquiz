@@ -1,4 +1,9 @@
-export default function ProgressBar({ current, total }) {
+interface ProgressBarProps {
+  current: number;
+  total: number;
+}
+
+export default function ProgressBar({ current, total }: ProgressBarProps) {
   return (
     <div className="flex items-center gap-3 mb-6">
       <span className="text-sm text-slate-500">Card {current + 1} of {total}</span>

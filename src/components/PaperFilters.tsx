@@ -1,4 +1,18 @@
+import { ChangeEvent } from 'react';
 import { Search, SortAsc, X } from 'lucide-react';
+import type { SortOption } from '@shared/types';
+
+interface PaperFiltersProps {
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  selectedTags: string[];
+  setSelectedTags: (tags: string[]) => void;
+  sortBy: SortOption;
+  setSortBy: (sort: SortOption) => void;
+  showDueOnly: boolean;
+  setShowDueOnly: (show: boolean) => void;
+  allTags: string[];
+}
 
 export default function PaperFilters({ 
   searchQuery, 
@@ -10,7 +24,27 @@ export default function PaperFilters({
   showDueOnly,
   setShowDueOnly,
   allTags
-}) {
+}: PaperFiltersProps) {
+  const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setSearchQuery(e.target.value);
+  };
+
+  const handleSortChange = (e: ChangeEvent<HTMLSelectElement>) => {
+    setSortBy(e.target.value as SortOption);
+  };
+
+  const handleDueOnlyChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setShowDueOnly(e.target.checked);
+  };
+
+  const toggleTag = (tag: string) => {
+    if (selectedTags.includes(tag)) {
+      setSelectedTags(selectedTags.filter(t => t !== tag));
+    } else {
+      setSelectedTags([...selectedTags, tag]);
+    }
+  };
+
   return (
     <div className="space-y-3 mb-6">
       {/* Search Bar */}
@@ -20,7 +54,7 @@ export default function PaperFilters({
           type="text"
           placeholder="Search papers..."
           value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          onChange={handleSearchChange}
           className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-sm"
         />
         {searchQuery && (
@@ -40,7 +74,7 @@ export default function PaperFilters({
           <SortAsc className="w-4 h-4 text-slate-400" />
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
+            onChange={handleSortChange}
             className="text-sm border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <option value="priority">Needs Review</option>
@@ -57,7 +91,7 @@ export default function PaperFilters({
           <input
             type="checkbox"
             checked={showDueOnly}
-            onChange={(e) => setShowDueOnly(e.target.checked)}
+            onChange={handleDueOnlyChange}
             className="rounded border-slate-300 text-indigo-500 focus:ring-indigo-500"
           />
           Needs review only
@@ -70,13 +104,7 @@ export default function PaperFilters({
           {allTags.slice(0, 10).map(tag => (
             <button
               key={tag}
-              onClick={() => {
-                if (selectedTags.includes(tag)) {
-                  setSelectedTags(selectedTags.filter(t => t !== tag));
-                } else {
-                  setSelectedTags([...selectedTags, tag]);
-                }
-              }}
+              onClick={() => toggleTag(tag)}
               className={`px-2 py-0.5 rounded text-xs transition-colors ${
                 selectedTags.includes(tag)
                   ? 'bg-indigo-500 text-white'
