@@ -1,4 +1,3 @@
-import { CARDS_PER_SESSION } from '../constants';
 import type {
   Paper,
   Flashcard,
@@ -6,22 +5,31 @@ import type {
   EvaluateResponse,
   GenerateResponse,
   ErrorResponse,
+  QuizConfig,
 } from '@shared/types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 /**
- * Generate MCQ flashcards for a paper using Claude (via backend)
+ * Default quiz configuration
+ */
+export const DEFAULT_QUIZ_CONFIG: QuizConfig = {
+  numMCQ: 1,
+  numOpenEnded: 5
+};
+
+/**
+ * Generate quiz flashcards for a paper using Claude (via backend)
  * @param paper - Paper object with title, authors, tags, content
  * @param otherPapers - Other papers in the database for comparison questions
- * @param numCards - Number of flashcards to generate
+ * @param config - Quiz configuration (number of MCQ and open-ended questions)
  * @param abstract - Optional arXiv abstract for richer context
- * @returns Array of MCQ flashcard objects
+ * @returns Array of flashcard objects
  */
 export async function generateFlashcards(
   paper: Paper,
   otherPapers: Paper[] = [],
-  numCards: number = CARDS_PER_SESSION,
+  config: QuizConfig = DEFAULT_QUIZ_CONFIG,
   abstract: string | null = null
 ): Promise<Flashcard[]> {
   try {
@@ -33,7 +41,8 @@ export async function generateFlashcards(
       body: JSON.stringify({
         paper,
         otherPapers,
-        numCards,
+        numMCQ: config.numMCQ,
+        numOpenEnded: config.numOpenEnded,
         abstract
       })
     });

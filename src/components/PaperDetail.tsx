@@ -1,5 +1,6 @@
-import { X, ExternalLink, FileText, Clock, Target, TrendingUp, BookOpen, Tag } from 'lucide-react';
-import type { Paper, PaperStats, Session } from '@shared/types';
+import { useState } from 'react';
+import { X, ExternalLink, FileText, Clock, Target, TrendingUp, BookOpen, Tag, Settings2, Minus, Plus } from 'lucide-react';
+import type { Paper, PaperStats, Session, QuizConfig } from '@shared/types';
 
 interface PaperDetailProps {
   paper: Paper | null;
@@ -7,7 +8,7 @@ interface PaperDetailProps {
   sessions: Session[];
   relatedPapers: Paper[];
   onClose: () => void;
-  onStartQuiz: () => void;
+  onStartQuiz: (config: QuizConfig) => void;
 }
 
 export default function PaperDetail({ 
@@ -18,7 +19,14 @@ export default function PaperDetail({
   onClose, 
   onStartQuiz 
 }: PaperDetailProps) {
+  const [numMCQ, setNumMCQ] = useState(1);
+  const [numOpenEnded, setNumOpenEnded] = useState(5);
+  const [showConfig, setShowConfig] = useState(false);
+  
   if (!paper) return null;
+  
+  const totalQuestions = numMCQ + numOpenEnded;
+  const isValidConfig = totalQuestions >= 1 && totalQuestions <= 10;
 
   const masteryScore = stats?.masteryScore || 0;
   const reviewCount = stats?.reviewCount || 0;
@@ -188,11 +196,85 @@ export default function PaperDetail({
 
         {/* Footer */}
         <div className="sticky bottom-0 bg-white border-t border-slate-200 p-4">
+          {/* Quiz Configuration Toggle */}
           <button
-            onClick={onStartQuiz}
-            className="w-full py-3 bg-indigo-500 text-white rounded-xl font-medium hover:bg-indigo-600"
+            onClick={() => setShowConfig(!showConfig)}
+            className="w-full flex items-center justify-center gap-2 text-sm text-slate-600 hover:text-slate-800 mb-3"
           >
-            Start Quiz
+            <Settings2 className="w-4 h-4" />
+            {showConfig ? 'Hide options' : 'Customize quiz'}
+          </button>
+          
+          {/* Quiz Configuration Panel */}
+          {showConfig && (
+            <div className="bg-slate-50 rounded-lg p-4 mb-3 space-y-4">
+              <div className="text-sm font-medium text-slate-700 mb-2">Quiz Configuration</div>
+              
+              {/* MCQ Count */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-slate-700">Multiple Choice</div>
+                  <div className="text-xs text-slate-500">Quick recall questions</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setNumMCQ(Math.max(0, numMCQ - 1))}
+                    disabled={numMCQ <= 0}
+                    className="p-1 rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <span className="w-8 text-center font-medium text-slate-800">{numMCQ}</span>
+                  <button
+                    onClick={() => setNumMCQ(Math.min(5, numMCQ + 1))}
+                    disabled={numMCQ >= 5}
+                    className="p-1 rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              
+              {/* Open-Ended Count */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-slate-700">Open-Ended</div>
+                  <div className="text-xs text-slate-500">Deeper understanding</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setNumOpenEnded(Math.max(0, numOpenEnded - 1))}
+                    disabled={numOpenEnded <= 0}
+                    className="p-1 rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <Minus className="w-4 h-4" />
+                  </button>
+                  <span className="w-8 text-center font-medium text-slate-800">{numOpenEnded}</span>
+                  <button
+                    onClick={() => setNumOpenEnded(Math.min(5, numOpenEnded + 1))}
+                    disabled={numOpenEnded >= 5}
+                    className="p-1 rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              
+              {/* Summary */}
+              <div className={`text-center text-sm ${isValidConfig ? 'text-slate-600' : 'text-red-500'}`}>
+                {isValidConfig 
+                  ? `Total: ${totalQuestions} question${totalQuestions !== 1 ? 's' : ''}`
+                  : 'Select at least 1 question'}
+              </div>
+            </div>
+          )}
+          
+          <button
+            onClick={() => onStartQuiz({ numMCQ, numOpenEnded })}
+            disabled={!isValidConfig}
+            className="w-full py-3 bg-indigo-500 text-white rounded-xl font-medium hover:bg-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Start Quiz ({totalQuestions} question{totalQuestions !== 1 ? 's' : ''})
           </button>
         </div>
       </div>

@@ -220,12 +220,22 @@ export type AppAction =
 // ==================== API Request/Response Types ====================
 
 /**
+ * Quiz configuration for question generation
+ */
+export interface QuizConfig {
+  numMCQ: number; // 0-5
+  numOpenEnded: number; // 0-5
+}
+
+/**
  * Generate flashcards request
  */
 export interface GenerateRequest {
   paper: Paper;
   otherPapers?: Paper[];
-  numCards?: number;
+  numCards?: number; // Deprecated, use quizConfig instead
+  numMCQ?: number;
+  numOpenEnded?: number;
   abstract?: string | null;
 }
 

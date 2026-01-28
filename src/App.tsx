@@ -11,7 +11,8 @@ import type {
   AppAction,
   SortOption,
   CachedFlashcards,
-  CachedAbstract
+  CachedAbstract,
+  QuizConfig
 } from '@shared/types';
 
 // Import constants
@@ -22,7 +23,7 @@ import { calculatePriority } from './utils/priority';
 import { calculateNextReview } from './utils/spacedRepetition';
 
 // Import services
-import { generateFlashcards, evaluateAnswer } from './services/claudeApi';
+import { generateFlashcards, evaluateAnswer, DEFAULT_QUIZ_CONFIG } from './services/claudeApi';
 import { fetchPapers, updatePaperStats, checkHealth, fetchAbstract, isArxivUrl, resetPaperStats } from './services/notionApi';
 
 // Import storage hook
@@ -227,13 +228,21 @@ export default function FlashcardApp() {
     setUserText(existingAnswer?.userText ?? '');
   }, [state.currentCardIndex, state.answers]);
 
-  const startReview = useCallback(async (paper: Paper, forceRegenerate = false) => {
+  const startReview = useCallback(async (
+    paper: Paper, 
+    config: QuizConfig = DEFAULT_QUIZ_CONFIG,
+    forceRegenerate = false
+  ) => {
     dispatch({ type: 'SELECT_PAPER', payload: paper });
 
-    // Check for cached flashcards
+    // Check for cached flashcards (only use cache if using default config and not forcing regenerate)
     const cacheKey = `flashcards:${paper.id}`;
     const abstractCacheKey = `abstract:${paper.id}`;
-    const cached = !forceRegenerate ? await storage.get<CachedFlashcards>(cacheKey) : null;
+    const isDefaultConfig = config.numMCQ === DEFAULT_QUIZ_CONFIG.numMCQ && 
+                           config.numOpenEnded === DEFAULT_QUIZ_CONFIG.numOpenEnded;
+    const cached = (!forceRegenerate && isDefaultConfig) 
+      ? await storage.get<CachedFlashcards>(cacheKey) 
+      : null;
 
     if (cached && cached.flashcards?.length > 0) {
       dispatch({ type: 'SET_FLASHCARDS', payload: cached.flashcards });
@@ -273,19 +282,20 @@ export default function FlashcardApp() {
       dispatch({ type: 'SET_LOADING', payload: { loading: true, message: 'Generating quiz questions...' } });
 
       // Pass other papers for comparison questions, include abstract
-      const cards = await generateFlashcards(paper, state.papers, undefined, abstract);
+      const cards = await generateFlashcards(paper, state.papers, config, abstract);
       dispatch({ type: 'SET_FLASHCARDS', payload: cards });
 
-      // Cache the flashcards (including abstract indicator)
-      await storage.set<CachedFlashcards>(cacheKey, {
-        flashcards: cards,
-        generatedAt: new Date().toISOString(),
-        paperTitle: paper.title,
-        hadAbstract: !!abstract
-      });
-
-      // Update cached papers set
-      setCachedPapers(prev => new Set([...prev, paper.id]));
+      // Only cache if using default config
+      if (isDefaultConfig) {
+        await storage.set<CachedFlashcards>(cacheKey, {
+          flashcards: cards,
+          generatedAt: new Date().toISOString(),
+          paperTitle: paper.title,
+          hadAbstract: !!abstract
+        });
+        // Update cached papers set
+        setCachedPapers(prev => new Set([...prev, paper.id]));
+      }
 
       setSelectedAnswer(null);
     } catch (error) {
@@ -670,8 +680,8 @@ export default function FlashcardApp() {
                   p.tags?.some(t => selectedPaper.tags?.includes(t))
                 )}
                 onClose={() => setSelectedPaper(null)}
-                onStartQuiz={() => {
-                  startReview(selectedPaper);
+                onStartQuiz={(config) => {
+                  startReview(selectedPaper, config);
                   setSelectedPaper(null);
                 }}
               />
@@ -748,7 +758,7 @@ export default function FlashcardApp() {
               </button>
               <div className="flex items-center gap-4">
                 <button
-                  onClick={() => state.currentPaper && startReview(state.currentPaper, true)}
+                  onClick={() => state.currentPaper && startReview(state.currentPaper, DEFAULT_QUIZ_CONFIG, true)}
                   className="flex items-center gap-1 text-slate-500 hover:text-indigo-600"
                   title="Generate new questions"
                 >
@@ -772,7 +782,7 @@ export default function FlashcardApp() {
             paper={state.currentPaper}
             answers={state.answers}
             flashcards={state.flashcards}
-            onReviewAgain={() => state.currentPaper && startReview(state.currentPaper)}
+            onReviewAgain={() => state.currentPaper && startReview(state.currentPaper, DEFAULT_QUIZ_CONFIG)}
             onNewPaper={() => dispatch({ type: 'RESET_SESSION' })}
             onEnd={() => dispatch({ type: 'RESET_SESSION' })}
           />
