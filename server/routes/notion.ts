@@ -187,6 +187,36 @@ async function transformNotionPage(page: PageObjectResponse, includeContent = tr
     content = await getPageContent(page.id);
   }
 
+  // OPTIONAL: Extract sync stats if properties exist
+  let notionStats: Paper['notionStats'] = undefined;
+  
+  // Try to get Last Reviewed
+  const lastReviewedProp = properties['Last Reviewed'];
+  const lastReviewed = lastReviewedProp?.type === 'date' && lastReviewedProp.date?.start
+    ? lastReviewedProp.date.start
+    : undefined;
+  
+  // Try to get Mastery Score
+  const masteryScoreProp = properties['Mastery Score'];
+  const masteryScore = masteryScoreProp?.type === 'number' && masteryScoreProp.number !== null
+    ? masteryScoreProp.number
+    : undefined;
+  
+  // Try to get Review Count
+  const reviewCountProp = properties['Review Count'];
+  const reviewCount = reviewCountProp?.type === 'number' && reviewCountProp.number !== null
+    ? reviewCountProp.number
+    : undefined;
+  
+  // Only include notionStats if at least one property exists
+  if (lastReviewed !== undefined || masteryScore !== undefined || reviewCount !== undefined) {
+    notionStats = {
+      lastReviewed,
+      masteryScore,
+      reviewCount
+    };
+  }
+
   return {
     id: page.id,
     title,
@@ -196,7 +226,8 @@ async function transformNotionPage(page: PageObjectResponse, includeContent = tr
     notionUrl: `https://www.notion.so/${page.id.replace(/-/g, '')}`,
     content,
     lastEdited: page.last_edited_time,
-    createdAt: page.created_time
+    createdAt: page.created_time,
+    notionStats
   };
 }
 
@@ -391,6 +422,62 @@ router.patch('/papers/:id', async (
     console.error(`Failed to update paper ${req.params.id}:`, err);
     res.status(500).json({
       error: 'Failed to update paper',
+      message: err.message
+    });
+  }
+});
+
+/**
+ * POST /api/papers/:id/reset
+ * Reset paper review stats in Notion (set to zero/clear)
+ */
+router.post('/papers/:id/reset', async (
+  req: Request<{ id: string }>,
+  res: Response<UpdatePaperResponse | ErrorResponse>
+) => {
+  try {
+    const { id } = req.params;
+
+    // Build properties to reset
+    const properties: Record<string, unknown> = {
+      'Mastery Score': { number: 0 },
+      'Review Count': { number: 0 },
+      'Last Reviewed': { date: null } // Clear the date
+    };
+
+    const response = await getNotionClient().pages.update({
+      page_id: id,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      properties: properties as any
+    });
+
+    res.json({
+      success: true,
+      updatedAt: 'last_edited_time' in response ? response.last_edited_time : new Date().toISOString()
+    });
+  } catch (error) {
+    const err = error as NotionAPIError;
+    
+    if (err.code === 'object_not_found') {
+      return res.status(404).json({
+        error: 'Paper not found',
+        message: `No paper found with ID: ${req.params.id}`
+      });
+    }
+    
+    if (err.code === 'validation_error') {
+      // Properties don't exist in the database - that's okay
+      console.log('Notion reset skipped: missing properties in database');
+      return res.status(400).json({
+        error: 'Validation error',
+        message: err.message,
+        hint: 'Stats properties may not exist in your Notion database'
+      });
+    }
+    
+    console.error(`Failed to reset paper ${req.params.id}:`, err);
+    res.status(500).json({
+      error: 'Failed to reset paper',
       message: err.message
     });
   }

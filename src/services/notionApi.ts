@@ -164,3 +164,29 @@ export function isArxivUrl(url: string | undefined | null): boolean {
   if (!url) return false;
   return /arxiv\.org\/(?:abs|pdf)\//.test(url);
 }
+
+/**
+ * Reset paper stats in Notion (set to zero/null)
+ * @param paperId - The Notion page ID
+ * @returns Success status
+ */
+export async function resetPaperStats(paperId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/papers/${paperId}/reset`, {
+      method: 'POST'
+    });
+    
+    if (!response.ok) {
+      // If reset fails (e.g., properties don't exist), that's okay
+      if (response.status === 400 || response.status === 404) {
+        return false;
+      }
+      throw new Error(`Failed to reset paper stats: ${response.status}`);
+    }
+    
+    return true;
+  } catch (error) {
+    console.warn(`Failed to reset stats for paper ${paperId}:`, error);
+    return false;
+  }
+}

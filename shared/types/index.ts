@@ -13,6 +13,12 @@ export interface Paper {
   content?: string;
   lastEdited?: string;
   createdAt?: string;
+  // Sync stats from Notion (if the properties exist in the database)
+  notionStats?: {
+    lastReviewed?: string;
+    masteryScore?: number;
+    reviewCount?: number;
+  };
 }
 
 /**

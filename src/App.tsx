@@ -23,7 +23,7 @@ import { calculateNextReview } from './utils/spacedRepetition';
 
 // Import services
 import { generateFlashcards, evaluateAnswer } from './services/claudeApi';
-import { fetchPapers, updatePaperStats, checkHealth, fetchAbstract, isArxivUrl } from './services/notionApi';
+import { fetchPapers, updatePaperStats, checkHealth, fetchAbstract, isArxivUrl, resetPaperStats } from './services/notionApi';
 
 // Import storage hook
 import storage from './hooks/useStorage';
@@ -117,6 +117,8 @@ export default function FlashcardApp() {
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [userText, setUserText] = useState('');
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetNotionToo, setResetNotionToo] = useState(true);
+  const [isResetting, setIsResetting] = useState(false);
   const [cachedPapers, setCachedPapers] = useState<Set<string>>(new Set());
   
   // Filter/Search/Sort state
@@ -129,8 +131,8 @@ export default function FlashcardApp() {
   useEffect(() => {
     async function loadData() {
       // Load paper stats from local storage
-      const stats = await storage.get<Record<string, PaperStats>>('paper-stats') || {};
-      dispatch({ type: 'SET_PAPER_STATS', payload: stats });
+      let localStats = await storage.get<Record<string, PaperStats>>('paper-stats') || {};
+      dispatch({ type: 'SET_PAPER_STATS', payload: localStats });
 
       // Load session history from local storage
       const sessionKeys = await storage.list('sessions:');
@@ -155,6 +157,56 @@ export default function FlashcardApp() {
           if (papers && papers.length > 0) {
             dispatch({ type: 'SET_PAPERS', payload: papers });
             console.log(`Loaded ${papers.length} papers from Notion`);
+            
+            // Merge Notion stats with local stats
+            // For each paper with notionStats, initialize or update local stats
+            let statsUpdated = false;
+            const mergedStats = { ...localStats };
+            
+            for (const paper of papers) {
+              if (paper.notionStats) {
+                const notionStats = paper.notionStats;
+                const existingStats = mergedStats[paper.id];
+                
+                // If no local stats exist, initialize from Notion
+                if (!existingStats) {
+                  if (notionStats.lastReviewed || notionStats.masteryScore || notionStats.reviewCount) {
+                    mergedStats[paper.id] = {
+                      lastReviewed: notionStats.lastReviewed,
+                      masteryScore: notionStats.masteryScore ?? 0,
+                      reviewCount: notionStats.reviewCount ?? 0,
+                      easeFactor: 2.5, // Default SM-2 ease factor
+                      interval: 1 // Default interval
+                    };
+                    statsUpdated = true;
+                    console.log(`Initialized stats from Notion for: ${paper.title}`);
+                  }
+                } else {
+                  // If local stats exist, check if Notion has more recent data
+                  const localDate = existingStats.lastReviewed ? new Date(existingStats.lastReviewed).getTime() : 0;
+                  const notionDate = notionStats.lastReviewed ? new Date(notionStats.lastReviewed).getTime() : 0;
+                  
+                  if (notionDate > localDate) {
+                    // Notion has more recent data, update local stats
+                    mergedStats[paper.id] = {
+                      ...existingStats,
+                      lastReviewed: notionStats.lastReviewed,
+                      masteryScore: notionStats.masteryScore ?? existingStats.masteryScore,
+                      reviewCount: notionStats.reviewCount ?? existingStats.reviewCount
+                    };
+                    statsUpdated = true;
+                    console.log(`Updated stats from Notion for: ${paper.title}`);
+                  }
+                }
+              }
+            }
+            
+            // If stats were updated, save and dispatch
+            if (statsUpdated) {
+              await storage.set('paper-stats', mergedStats);
+              dispatch({ type: 'SET_PAPER_STATS', payload: mergedStats });
+              console.log('Merged Notion stats with local storage');
+            }
           }
         } else {
           console.log('Backend not available, using fallback papers');
@@ -454,20 +506,42 @@ export default function FlashcardApp() {
   });
 
   const handleResetProgress = async () => {
-    await storage.remove('paper-stats');
-    const sessionKeys = await storage.list('sessions:');
-    for (const key of sessionKeys) {
-      await storage.remove(key);
+    setIsResetting(true);
+    
+    try {
+      // Clear local storage
+      await storage.remove('paper-stats');
+      const sessionKeys = await storage.list('sessions:');
+      for (const key of sessionKeys) {
+        await storage.remove(key);
+      }
+      // Also clear cached flashcards
+      const flashcardKeys = await storage.list('flashcards:');
+      for (const key of flashcardKeys) {
+        await storage.remove(key);
+      }
+      
+      // Optionally reset Notion stats
+      if (resetNotionToo) {
+        console.log('Resetting stats in Notion...');
+        let resetCount = 0;
+        for (const paper of state.papers) {
+          const success = await resetPaperStats(paper.id);
+          if (success) resetCount++;
+        }
+        console.log(`Reset stats for ${resetCount} papers in Notion`);
+      }
+      
+      dispatch({ type: 'SET_PAPER_STATS', payload: {} });
+      dispatch({ type: 'SET_SESSION_HISTORY', payload: [] });
+      setCachedPapers(new Set());
+    } catch (error) {
+      console.error('Error during reset:', error);
+    } finally {
+      setIsResetting(false);
+      setShowResetConfirm(false);
+      setResetNotionToo(true); // Reset checkbox for next time
     }
-    // Also clear cached flashcards
-    const flashcardKeys = await storage.list('flashcards:');
-    for (const key of flashcardKeys) {
-      await storage.remove(key);
-    }
-    dispatch({ type: 'SET_PAPER_STATS', payload: {} });
-    dispatch({ type: 'SET_SESSION_HISTORY', payload: [] });
-    setCachedPapers(new Set());
-    setShowResetConfirm(false);
   };
 
   // Get current card for rendering
@@ -721,23 +795,53 @@ export default function FlashcardApp() {
               <div className="p-2 bg-red-100 rounded-full">
                 <Trash2 className="w-6 h-6 text-red-600" />
               </div>
-              <h3 className="text-lg font-semibold text-slate-800">Reset Progress?</h3>
+              <h3 className="text-lg font-semibold text-slate-800">Reset All Progress?</h3>
             </div>
-            <p className="text-slate-600 mb-6">
-              This will clear all your quiz history and mastery scores. Your papers will remain but all progress will be lost.
-            </p>
+            <div className="text-slate-600 mb-4">
+              <p className="mb-3">This will permanently delete:</p>
+              <ul className="list-disc list-inside space-y-1 text-sm">
+                <li>All quiz history and mastery scores</li>
+                <li>Cached questions</li>
+                {resetNotionToo && <li>Stats synced to your Notion database</li>}
+              </ul>
+              <p className="mt-3 text-sm">Your papers will remain, but all review progress will be lost.</p>
+            </div>
+            
+            {/* Checkbox for Notion sync */}
+            <label className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg mb-4 cursor-pointer hover:bg-slate-100">
+              <input
+                type="checkbox"
+                checked={resetNotionToo}
+                onChange={(e) => setResetNotionToo(e.target.checked)}
+                className="w-4 h-4 text-red-500 rounded border-slate-300 focus:ring-red-500"
+              />
+              <span className="text-sm text-slate-700">Also clear stats from Notion</span>
+            </label>
+            
             <div className="flex gap-3">
               <button
-                onClick={() => setShowResetConfirm(false)}
-                className="flex-1 py-2 px-4 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50"
+                onClick={() => {
+                  setShowResetConfirm(false);
+                  setResetNotionToo(true);
+                }}
+                disabled={isResetting}
+                className="flex-1 py-2 px-4 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 onClick={handleResetProgress}
-                className="flex-1 py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600"
+                disabled={isResetting}
+                className="flex-1 py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 flex items-center justify-center gap-2"
               >
-                Reset
+                {isResetting ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Resetting...
+                  </>
+                ) : (
+                  'Reset'
+                )}
               </button>
             </div>
           </div>
