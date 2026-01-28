@@ -4,36 +4,46 @@ A personal learning application that intelligently selects papers from a Notion 
 
 ## Features
 
-- **AI-Generated Flashcards**: Uses Claude API to generate contextual flashcards from your paper notes
-- **Smart Answer Evaluation**: AI evaluates your answers and provides constructive feedback
+- **AI-Generated Questions**: Uses Claude API to generate contextual questions (1 MCQ + 5 open-ended) from your paper notes
+- **Smart Answer Evaluation**: AI evaluates open-ended answers with detailed feedback on accuracy, completeness, and depth
 - **Spaced Repetition**: SM-2 algorithm optimizes review scheduling for long-term retention
-- **Notion Integration**: Syncs papers from your Notion database
-- **Progress Tracking**: Tracks mastery scores and review history
+- **Notion Integration**: Syncs papers from your Notion database with automatic arXiv abstract enrichment
+- **Progress Tracking**: Tracks mastery scores, review history, and session performance
 
 ## Project Structure
 
 ```
 flashcard-app/
-├── src/
-│   ├── components/       # React UI components
-│   │   ├── ErrorMessage.jsx
-│   │   ├── FeedbackPanel.jsx
-│   │   ├── FlashcardView.jsx
-│   │   ├── HistoryView.jsx
-│   │   ├── LoadingSpinner.jsx
-│   │   ├── PaperCard.jsx
-│   │   ├── ProgressBar.jsx
-│   │   └── SessionSummary.jsx
-│   ├── constants/        # App constants and initial data
-│   ├── hooks/            # Custom React hooks
-│   ├── services/         # API services (Claude, Notion)
-│   ├── utils/            # Utility functions
-│   └── App.jsx           # Main application component
-├── server/               # Express backend for Notion API
+├── src/                      # Frontend (React + TypeScript)
+│   ├── components/           # React UI components
+│   │   ├── ErrorMessage.tsx
+│   │   ├── FeedbackPanel.tsx
+│   │   ├── FlashcardView.tsx   # MCQ question display
+│   │   ├── HistoryView.tsx
+│   │   ├── LoadingSpinner.tsx
+│   │   ├── OpenEndedView.tsx   # Open-ended question display
+│   │   ├── PaperCard.tsx
+│   │   ├── PaperDetail.tsx
+│   │   ├── PaperFilters.tsx
+│   │   ├── ProgressBar.tsx
+│   │   └── SessionSummary.tsx
+│   ├── constants/            # App constants and initial data
+│   ├── hooks/                # Custom React hooks (useStorage)
+│   ├── services/             # API services (claudeApi, notionApi)
+│   ├── utils/                # Utility functions (priority, spacedRepetition)
+│   └── App.tsx               # Main application component
+├── server/                   # Backend (Express + TypeScript)
 │   ├── routes/
-│   │   └── notion.js     # Notion API routes
-│   └── index.js          # Server entry point
-└── .env                  # Environment variables (not committed)
+│   │   ├── notion.ts         # Notion API routes
+│   │   ├── generate.ts       # AI question generation
+│   │   └── evaluate.ts       # AI answer evaluation
+│   ├── utils/
+│   │   └── arxiv.ts          # arXiv metadata fetching
+│   └── index.ts              # Server entry point
+├── shared/                   # Shared TypeScript types
+│   └── types/
+│       └── index.ts          # Type definitions for Paper, Flashcard, etc.
+└── .env                      # Environment variables (not committed)
 ```
 
 ## Setup
@@ -54,7 +64,6 @@ cd ..
 
 **Frontend** (`.env` in root):
 ```env
-VITE_ANTHROPIC_API_KEY=your_anthropic_api_key_here
 VITE_API_URL=http://localhost:3001
 ```
 
@@ -62,8 +71,11 @@ VITE_API_URL=http://localhost:3001
 ```env
 NOTION_API_KEY=your_notion_api_key_here
 NOTION_DATABASE_ID=your_database_id_here
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
 PORT=3001
 ```
+
+> **Note:** All API keys are stored only in `server/.env`. The frontend communicates with the backend, which handles all external API calls.
 
 ### 3. Set Up Notion Integration
 
@@ -75,12 +87,13 @@ PORT=3001
 **Required Notion Database Properties:**
 - `Note` (Title): Paper title
 - `Note Type` (Select): Should have "Paper" option
-- `[Paper] Category` (Select): Paper category
-- `Tags` (Multi-select): Topic tags
-- `Authors` (Text): Paper authors
-- `userDefined:URL` or `URL` (URL): Link to paper
 
-**Optional Properties** (for syncing review stats):
+**Optional Properties** (auto-detected):
+- `Tags`, `Labels`, or `Topics` (Multi-select): Topic tags
+- `Authors` or `Author` (Rich text): Paper authors
+- `URL`, `Link`, `Paper URL`, `Source`, or `userDefined:URL` (URL): Link to paper
+
+**Optional Properties** (for syncing review stats back to Notion):
 - `Last Reviewed` (Date)
 - `Mastery Score` (Number)
 - `Review Count` (Number)
@@ -100,19 +113,37 @@ npm run dev
 
 The app will be available at `http://localhost:5173`
 
+### Type Checking
+
+```bash
+# Frontend type check
+npm run typecheck
+
+# Backend type check
+cd server
+npm run typecheck
+```
+
 ### Production Build
 
 ```bash
+# Build frontend
 npm run build
-npm run preview
+
+# Build backend
+cd server
+npm run build
+
+# Start production server
+npm start
 ```
 
 ## Tech Stack
 
-- **Frontend**: React 19, Vite, Tailwind CSS
-- **Backend**: Express.js, @notionhq/client
-- **AI**: Anthropic Claude API (Haiku 4.5)
-- **Storage**: LocalStorage (client-side), Notion (server-side)
+- **Frontend**: React 19, TypeScript, Vite, Tailwind CSS
+- **Backend**: Express.js, TypeScript, @notionhq/client
+- **AI**: Anthropic Claude API (claude-3-5-haiku)
+- **Storage**: localStorage (client-side), Notion (server-side sync)
 
 ## API Endpoints
 
@@ -120,5 +151,19 @@ npm run preview
 |--------|----------|-------------|
 | GET | `/api/health` | Health check |
 | GET | `/api/papers` | Fetch all papers from Notion |
-| GET | `/api/papers/:id` | Fetch single paper |
-| PATCH | `/api/papers/:id` | Update paper review stats |
+| GET | `/api/papers/:id` | Fetch single paper with content |
+| PATCH | `/api/papers/:id` | Update paper review stats in Notion |
+| GET | `/api/abstract/:id` | Fetch arXiv abstract for a paper |
+| POST | `/api/generate` | Generate flashcard questions for a paper |
+| POST | `/api/evaluate` | Evaluate an open-ended answer |
+
+## Question Types
+
+### MCQ (1 per session)
+Quick recall check with 4 options covering key concepts from the paper.
+
+### Open-ended (5 per session)
+Deeper understanding questions with AI-powered evaluation:
+- **Difficulty levels**: understand, apply, analyze, evaluate
+- **Scoring**: 0-100 based on accuracy, completeness, and depth
+- **Feedback**: What you got right, what's missing, actionable suggestions
